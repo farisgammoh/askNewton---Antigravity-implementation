@@ -1,0 +1,29 @@
+Here’s a comprehensive prompt you can give to Replit’s AI in order to build a WhatsApp‑based agent for askNewton that responds to messages on your number (415‑769‑7858) in a natural, conversational way.
+
+⸻
+
+Replit Prompt:
+
+Project goal: Build a Python web app, deployed on Replit, that uses Twilio’s WhatsApp API and OpenAI’s ChatGPT to respond to WhatsApp messages sent to my business number (415‑769‑7858). The app should run a web server (FastAPI is preferred) that Twilio can call via a webhook, and it should generate human‑like, empathetic responses tailored to health‑insurance newcomers and expats seeking guidance in the U.S.
+
+Key requirements:
+	1.	WhatsApp integration: Use Twilio’s WhatsApp Business/Sandbox API. Configure a webhook endpoint (e.g., /message) that Twilio will hit whenever a WhatsApp message arrives ￼. In Replit, set the server to listen on 0.0.0.0 so it is accessible externally ￼.
+	2.	Environment variables: Read sensitive credentials from environment variables using python-decouple or a similar library. These should include TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER (the “From” number Twilio provides), OPENAI_API_KEY and my personal WhatsApp number TO_NUMBER (set to +10000000000). Keep these secrets in Replit’s “Secrets” panel. Twilio’s tutorial shows a .env layout for reference ￼.
+	3.	ChatGPT integration: Use OpenAI’s gpt‑3.5‑turbo (or GPT‑4 if available) to generate responses. Accept the inbound message (Body) as the user’s prompt, prepend a system message that defines the assistant’s persona (e.g., “You are askNewton, a friendly insurance guide for newcomers and expats.”), and call openai.ChatCompletion.create to get a reply ￼. Make sure to pass the API key from environment variables ￼.
+	4.	Response logic:
+	•	Aim for a very human, empathetic tone. Acknowledge the user’s message, ask follow‑up questions if necessary, and provide clear next steps.
+	•	Maintain context across messages by storing previous conversation turns in a simple in‑memory dictionary keyed by the sender’s number. Include that context in the ChatGPT prompt for continuity.
+	•	If the question goes beyond basic insurance guidance, politely clarify what you can and cannot help with.
+	•	Log conversations (sender, message, response) to a lightweight database (e.g., SQLite via SQLAlchemy) for later review ￼.
+	5.	Sending replies: After generating the response, send it back via Twilio’s API to the user’s WhatsApp number using Twilio’s Python helper library. You can see an example of using send_message() to send the ChatGPT response in Twilio’s tutorial ￼ ￼.
+	6.	Testing and deployment:
+	•	When running in Replit, click “Run” to start the FastAPI server. Copy the public URL shown in Replit’s browser pane and append /message to it.
+	•	In Twilio’s console under your WhatsApp number, set the “Webhook URL” for incoming messages to that Replit URL and choose HTTP POST ￼.
+	•	Verify you can text your Twilio WhatsApp number from your own WhatsApp. The bot should respond automatically with personalized guidance.
+	7.	Optional enhancements: Add error handling for OpenAI/Twilio failures, support multilingual responses (English, Spanish, Arabic, Mandarin), and ensure compliance with WhatsApp’s messaging policies.
+
+Overall tone and style: Responses should feel like a caring human assistant rather than a robotic script. Use friendly greetings, ask clarifying questions when needed, and offer concise next steps. For example, if someone says “I just completed the assessment,” the agent might reply: “Thanks for completing your assessment! I’m preparing your personalized insurance report now. Would you like a brief overview of what happens next?” This conversational flow is similar to Twilio’s example, where a FastAPI route receives the message and sends an OpenAI‑generated response ￼ ￼.
+
+⸻
+
+This prompt will guide Replit’s AI to scaffold an app that uses Twilio and OpenAI to handle WhatsApp messages from your askNewton customers, delivering human‑like responses and helping them navigate U.S. health insurance.
