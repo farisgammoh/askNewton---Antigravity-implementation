@@ -51,6 +51,43 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Feature Banner */}
+      <section className="py-12 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="relative rounded-xl overflow-hidden shadow-2xl bg-gradient-to-r from-primary/10 to-accent/10 p-8">
+            <div className="grid md:grid-cols-2 gap-8 items-center">
+              <div className="space-y-4">
+                <h2 className="text-2xl md:text-3xl font-bold text-foreground">
+                  Trusted by California Newcomers
+                </h2>
+                <p className="text-lg text-muted-foreground">
+                  Join thousands of nomads, travelers, and students who've found the right health insurance coverage in California.
+                </p>
+                <div className="flex gap-4">
+                  <Link href="/start">
+                    <Button 
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      data-testid="button-banner-start"
+                    >
+                      Get Started
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+              <div className="relative">
+                <img 
+                  src="/feature-banner.jpeg" 
+                  alt="AskNewton success story"
+                  className="w-full h-64 md:h-80 object-cover rounded-lg shadow-lg"
+                  data-testid="img-feature-banner"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-lg"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Trust Indicators */}
       <section className="py-8 border-t border-border">
         <div className="flex flex-col md:flex-row items-center justify-center space-y-4 md:space-y-0 md:space-x-8 text-sm text-muted-foreground">
