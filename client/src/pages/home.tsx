@@ -88,6 +88,45 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Music Section */}
+      <section className="py-6 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-gradient-to-r from-accent/5 to-primary/5 rounded-2xl p-6 border border-border/50">
+            <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center justify-center w-12 h-12 bg-green-500 rounded-full">
+                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.568 17.568c-.22.365-.688.48-1.041.26-2.851-1.74-6.437-2.133-10.656-1.167-.415.094-.831-.167-.925-.583-.094-.415.167-.831.583-.925 4.633-1.061 8.617-.615 11.814 1.354.364.221.479.688.26 1.041l-.035.02zm1.484-3.297c-.277.458-.862.607-1.32.33-3.264-2.009-8.238-2.587-12.097-1.413-.513.156-1.055-.126-1.211-.639-.156-.513.126-1.055.639-1.211 4.417-1.344 9.969-.692 13.655 1.613.458.277.607.862.33 1.32h.004zm.128-3.432c-3.915-2.324-10.371-2.538-14.111-1.405-.615.186-1.265-.164-1.451-.779-.186-.615.164-1.265.779-1.451 4.283-1.297 11.368-1.047 15.902 1.621.595.349.794 1.114.445 1.709-.35.595-1.114.794-1.709.445l.145-.14z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">Vibe with us</h3>
+                  <p className="text-sm text-muted-foreground">Listen while you explore your options</p>
+                </div>
+              </div>
+              <a 
+                href="https://open.spotify.com/track/3bHhUEOTIbezeZ856R0BX5?si=mKxM7PNySgK84z5ee2Gbgg"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex"
+              >
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="bg-green-500 hover:bg-green-600 text-white border-green-500 hover:border-green-600"
+                  data-testid="button-spotify-play"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                  Play on Spotify
+                </Button>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Trust Indicators */}
       <section className="py-8 border-t border-border">
         <div className="flex flex-col md:flex-row items-center justify-center space-y-4 md:space-y-0 md:space-x-8 text-sm text-muted-foreground">
