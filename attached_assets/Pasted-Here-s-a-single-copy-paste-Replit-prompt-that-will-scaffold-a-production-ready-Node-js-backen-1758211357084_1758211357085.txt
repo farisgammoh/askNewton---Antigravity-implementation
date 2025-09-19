@@ -1,0 +1,289 @@
+Here’s a single, copy-paste **Replit prompt** that will scaffold a production-ready **Node.js backend** to:
+
+1. connect **WhatsApp Cloud API** messages to **OpenAI** for smart replies, and
+2. ship a lightweight **JWT-secured dashboard** with **broker onboarding** (create/read/update, invite links), plus conversation viewing.
+
+---
+
+### 🚀 Replit Prompt (copy everything below)
+
+You are Replit’s AI builder. Create a Node.js 20 project named **asknewton-broker-hub** that does the following:
+
+#### 0) Tech stack & packages
+
+* **Node 20**, **Express**, **Typescript**, **Prisma + SQLite** (swap to Postgres by changing DATABASE\_URL), **Zod**, **dotenv**, **helmet**, **cors**, **morgan**, **express-rate-limit**, **axios**, **jsonwebtoken**, **bcryptjs**, **cookie-parser**, **openai**.
+* Dev: **ts-node**, **tsx**, **typescript**, **@types/**\* for all used libs, **nodemon**.
+* Folder layout:
+
+```
+/src
+  /config (env.ts, openai.ts, whatsapp.ts)
+  /db (client.ts, schema.prisma)
+  /middleware (auth.ts, errors.ts, rate.ts)
+  /routes (webhook.ts, auth.ts, brokers.ts, conversations.ts)
+  /services (ai.ts, message-router.ts, broker.ts, onboarding.ts, conversation.ts)
+  /ui (serve a minimal dashboard: public/, views/ with EJS)
+  server.ts
+```
+
+* Scripts in package.json:
+  `"dev": "tsx watch src/server.ts"`, `"build": "tsc"`, `"start": "node dist/server.js"`, `"prisma:dev": "prisma migrate dev --name init && prisma generate"`
+
+#### 1) Environment variables
+
+Create `.env.example` and load with `dotenv`:
+
+```
+PORT=3000
+NODE_ENV=development
+
+# WhatsApp Cloud API (Meta)
+WHATSAPP_VERIFY_TOKEN=replace_me_for_webhook_setup
+WHATSAPP_ACCESS_TOKEN=EAAG... (long-lived)
+WHATSAPP_PHONE_NUMBER_ID=1234567890
+WHATSAPP_API_VERSION=v20.0
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Auth
+JWT_SECRET=super_secret_jwt
+SESSION_COOKIE_NAME=asknewton_session
+
+# Database
+DATABASE_URL="file:./dev.db"
+
+# App
+APP_BASE_URL=https://<your-repl-subdomain>.repl.co
+```
+
+#### 2) Prisma schema (src/db/schema.prisma)
+
+Use SQLite by default:
+
+```prisma
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "sqlite"; url = env("DATABASE_URL") }
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  broker       Broker?
+}
+
+model Broker {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  fullName     String
+  phone        String?
+  inviteToken  String?  @unique
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  conversations Conversation[]
+}
+
+model Conversation {
+  id             String   @id @default(cuid())
+  waPhoneNumber  String   // WhatsApp user phone
+  status         ConvStatus @default(OPEN)
+  assignedBrokerId String?
+  assignedBroker   Broker?  @relation(fields: [assignedBrokerId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  messages Message[]
+}
+
+model Message {
+  id            String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  direction     Direction // INBOUND or OUTBOUND
+  text          String
+  waMessageId   String?  @unique
+  createdAt     DateTime @default(now())
+}
+
+enum Role { ADMIN BROKER }
+enum Direction { INBOUND OUTBOUND }
+enum ConvStatus { OPEN PENDING CLOSED }
+```
+
+Run: `npx prisma migrate dev --name init && npx prisma generate`
+
+#### 3) Config files
+
+* **src/config/env.ts**: load and validate env with Zod. Export typed config.
+* **src/config/openai.ts**: export an OpenAI client from `openai` package.
+* **src/config/whatsapp.ts**: helper to call Meta Graph API:
+
+  * `POST https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`
+  * Function: `sendWhatsAppText(to: string, body: string): Promise<void>`
+
+#### 4) Middleware
+
+* **auth.ts**: `requireAuth` (JWT from cookie or `Authorization: Bearer`), roles guard (ADMIN/BROKER).
+* **rate.ts**: global rate limit (e.g., 100 req/15m).
+* **errors.ts**: centralized error handler with safe JSON responses.
+
+#### 5) Services
+
+* **ai.ts**:
+
+  * `generateReply({ prompt, conversationSummary }): Promise<string>`
+    Use OpenAI Chat Completions with a compact system prompt: “You are AskNewton’s assistant for health insurance. Be concise, helpful, and hand off to a human broker if complex or regulated. If user asks for quotes, collect: age, state, dependents, budget, preferred language. Never promise coverage; add disclaimers.”
+  * Use a lightweight conversation summarizer (last 10 messages from DB → a short summary we store).
+* **message-router.ts**:
+
+  * Upsert conversation by WhatsApp user phone.
+  * If assigned broker exists and conversation is OPEN → prefer broker handoff (flagging), else call **ai.generateReply**.
+  * Save inbound/outbound messages in DB.
+* **broker.ts**:
+
+  * CRUD for brokers, generate `inviteToken` (cuid), accept invite → set password.
+* **onboarding.ts**:
+
+  * Creates broker via email + name, returns invite link: `${APP_BASE_URL}/onboard/${inviteToken}`
+* **conversation.ts**:
+
+  * List conversations (filter by status, broker), list messages, assign/unassign broker, close conversation.
+
+#### 6) WhatsApp Webhook routes (src/routes/webhook.ts)
+
+* **GET `/webhooks/whatsapp`**: verify with `hub.mode`, `hub.verify_token` vs `WHATSAPP_VERIFY_TOKEN`, echo `hub.challenge`.
+* **POST `/webhooks/whatsapp`**: parse Cloud API payload, handle text messages only for v1:
+
+  * Extract `from` (user phone), `id` (wa msg id), `text.body`.
+  * Call `message-router` to log inbound and produce a reply.
+  * Send reply via `sendWhatsAppText(from, aiReply)`.
+  * Return 200 quickly (Meta requires fast ACK).
+
+#### 7) REST API (src/routes)
+
+* **Auth (`/api/auth`)**
+
+  * `POST /login` (email, password) → JWT cookie (`SESSION_COOKIE_NAME`, httpOnly, sameSite=lax).
+  * `POST /logout`
+* **Brokers (`/api/brokers`)** (ADMIN only)
+
+  * `GET /` list
+  * `POST /` create (email, fullName) → returns invite link
+  * `POST /:id/disable` / `POST /:id/enable`
+* **Onboarding (`/api/onboarding`)**
+
+  * `POST /accept-invite` (inviteToken, password, phone, fullName optional override) → creates User+Broker or activates existing; returns JWT.
+* **Conversations (`/api/conversations`)**
+
+  * `GET /` list with filters: `status`, `assigned=me|unassigned|all`
+  * `GET /:id/messages`
+  * `POST /:id/assign` (brokerId or “me”)
+  * `POST /:id/reply` (text) → logs outbound and sends to WhatsApp
+  * `POST /:id/close`
+
+All routes validate payloads with **Zod** and sanitize outputs.
+
+#### 8) Minimal Dashboard (server-rendered EJS)
+
+* Serve under `/dashboard` protected by `requireAuth`.
+* Pages:
+
+  * **Login** (`/login`)
+  * **Conversations**: table with filters, click to view thread and reply; quick actions: Assign to me, Close.
+  * **Brokers (Admin)**: list, add, enable/disable, copy **Invite link** button.
+  * **Onboarding**: `/onboard/:inviteToken` → set password & phone; success redirects to `/dashboard`.
+
+Static styles: simple CSS in `/src/ui/public/`. Use EJS templates in `/src/ui/views/`. No bundler required.
+
+#### 9) OpenAI integration details
+
+* Use `openai.chat.completions.create` with `model: "gpt-4o-mini"` (or any model exposed by the `openai` lib).
+* Messages: system + condensed conversation summary + latest user text.
+* Safety: cap tokens, add fallback reply if API fails.
+* Append a **regulatory footer** once per conversation (store flag on conversation) like:
+  “General info, not advice. For quotes/binding, a licensed broker will confirm details.”
+
+#### 10) WhatsApp Cloud API helper (src/config/whatsapp.ts)
+
+* Implement `sendWhatsAppText(to, body)`:
+
+  * POST JSON:
+
+    ```
+    {
+      "messaging_product": "whatsapp",
+      "to": "<E164 phone>",
+      "type": "text",
+      "text": {"preview_url": false, "body": body}
+    }
+    ```
+  * Auth: `Bearer WHATSAPP_ACCESS_TOKEN`.
+* Add a `formatE164` helper (assume US if missing +1; keep simple).
+
+#### 11) Security & Ops
+
+* Enable Helmet, CORS (restricted to `APP_BASE_URL`), rate limit on `/webhooks/whatsapp`.
+* Log with Morgan (combined in prod).
+* Never log PII payloads.
+* Add basic input sanitation.
+* `.gitignore` `.env`, `/node_modules`, `/dist`, `/dev.db`.
+* Provide a Postman collection (optional) in `/docs/postman.json`.
+
+#### 12) Example code stubs
+
+Create these files with working code (no TODOs left):
+
+* **src/server.ts** (boot app, mount middleware, routes, static, error handler)
+* **src/config/env.ts** (Zod schema; throw on missing)
+* **src/config/openai.ts** (client)
+* **src/config/whatsapp.ts** (sendWhatsAppText)
+* **src/db/client.ts** (PrismaClient singleton)
+* **src/middleware/auth.ts** (JWT verify, role guard)
+* **src/middleware/errors.ts** (error handler)
+* **src/middleware/rate.ts** (limiter)
+* **src/services/ai.ts** (generateReply, summarize)
+* **src/services/message-router.ts** (upsert conv, call AI, store, send)
+* **src/services/broker.ts**, **onboarding.ts**, **conversation.ts**
+* **src/routes/webhook.ts**, **auth.ts**, **brokers.ts**, **conversations.ts**
+* **src/ui/views/**: `layout.ejs`, `login.ejs`, `conversations.ejs`, `conversation.ejs`, `brokers.ejs`, `onboard.ejs`
+* **src/ui/public/**: `styles.css`
+
+#### 13) How to run
+
+* `cp .env.example .env` and fill values.
+* `npm run prisma:dev`
+* `npm run dev`
+
+#### 14) WhatsApp webhook setup notes (print in README)
+
+* In Meta App Dashboard → WhatsApp → **Configure Webhooks**:
+
+  * Callback URL: `https://<your-repl-url>/webhooks/whatsapp`
+  * Verify Token: `WHATSAPP_VERIFY_TOKEN` from `.env`
+  * Subscribe to: messages.
+* Test: send a WhatsApp message from a sandbox tester to the business number; see logs; AI should reply.
+* cURL sanity:
+
+  ```
+  curl -X GET "https://<your-repl-url>/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123"
+  ```
+
+#### 15) Nice-to-haves (implement if quick)
+
+* Broker “Away / Online” status; route AI reply if away.
+* Simple tag system on conversations (e.g., “quote”, “claims”, “billing”).
+* Export conversation transcript (txt).
+
+Finally, generate a concise **README.md** with setup, envs, and webhook instructions.
+
+Build everything now.
+
+---
+
+If you want me to tailor the system prompt for the AskNewton tone and the exact broker handoff rules (e.g., California vs Michigan licensing), say the word and I’ll drop in a ready-to-use version.
