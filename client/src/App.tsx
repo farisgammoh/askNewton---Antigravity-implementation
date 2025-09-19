@@ -11,6 +11,7 @@ import Traveler from "@/pages/traveler";
 import Student from "@/pages/student";
 import Start from "@/pages/start";
 import Thanks from "@/pages/thanks";
+import Dashboard from "@/pages/dashboard";
 import Terms from "@/pages/legal/terms";
 import Privacy from "./pages/legal/privacy";
 import Disclosures from "./pages/legal/disclosures";
@@ -28,6 +29,7 @@ function Router() {
           <Route path="/student" component={Student} />
           <Route path="/start" component={Start} />
           <Route path="/thanks" component={Thanks} />
+          <Route path="/dashboard" component={Dashboard} />
           <Route path="/legal/terms" component={Terms} />
           <Route path="/legal/privacy" component={Privacy} />
           <Route path="/legal/disclosures" component={Disclosures} />
