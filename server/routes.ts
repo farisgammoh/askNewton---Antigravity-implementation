@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { leadSchema } from "@shared/schema";
 import { z } from "zod";
 import { sendLeadNotification, type LeadNotificationData } from "./email";
+import { hubSpotService } from "./services/hubspot";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -33,6 +34,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send email notification using SendGrid
       await sendLeadNotification(lead);
 
+      // Send to HubSpot CRM (don't fail if HubSpot fails)
+      try {
+        const hubspotResult = await hubSpotService.createContact(lead);
+        if (hubspotResult.success) {
+          console.log(`📊 Lead sent to HubSpot: ${lead.email}`);
+        } else {
+          console.warn(`⚠️ HubSpot integration failed: ${hubspotResult.error}`);
+        }
+      } catch (error) {
+        console.error('HubSpot integration error:', error);
+        // Don't fail the request if HubSpot fails
+      }
+
       res.status(201).json({ success: true, leadId: lead.id });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -61,6 +75,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(leads);
     } catch (error) {
       console.error('Get leads error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // HubSpot connection test endpoint (admin only)
+  app.get("/api/hubspot/test", async (req, res) => {
+    // Require admin API key for security
+    const adminKey = req.headers['x-admin-key'];
+    if (!adminKey || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({ error: "Unauthorized - Admin access required" });
+    }
+
+    try {
+      const testResult = await hubSpotService.testConnection();
+      res.json({
+        configured: hubSpotService.isConfigured(),
+        ...testResult
+      });
+    } catch (error) {
+      console.error('HubSpot test error:', error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
