@@ -816,6 +816,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/privacy", servePrivacyPolicy);
   app.get("/privacy", servePrivacyPolicy);
 
+  // Terms of service routes (both /terms and /api/terms for flexibility)
+  const serveTermsOfService = (req: any, res: any) => {
+    try {
+      const termsPath = path.join(process.cwd(), 'public', 'asknewton_terms.html');
+      const htmlContent = fs.readFileSync(termsPath, 'utf-8');
+      res.setHeader('Content-Type', 'text/html');
+      res.send(htmlContent);
+    } catch (error) {
+      console.error('Terms of service file error:', error);
+      res.status(404).send('Terms of service not found');
+    }
+  };
+
+  app.get("/api/terms", serveTermsOfService);
+  app.get("/terms", serveTermsOfService);
+
   const httpServer = createServer(app);
   return httpServer;
 }
