@@ -63,7 +63,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get individual lead endpoint (public - for recommendation flow)
+  // Get individual lead endpoint (public - for recommendation flow, PII redacted)
   app.get("/api/leads/:leadId", async (req, res) => {
     try {
       const { leadId } = req.params;
@@ -74,7 +74,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Lead not found" });
       }
       
-      res.json(lead);
+      // SECURITY: Return only non-PII fields for public access
+      const publicLead = {
+        id: lead.id,
+        persona: lead.persona,
+        name: lead.name, // First name only for personalization
+        arrivalDate: lead.arrivalDate,
+        stayLength: lead.stayLength,
+        currentCoverage: lead.currentCoverage,
+        preexisting: lead.preexisting,
+        dependents: lead.dependents,
+        consent: lead.consent,
+        createdAt: lead.createdAt
+        // Removed: email, phone, notes, zip (PII)
+      };
+      
+      res.json(publicLead);
     } catch (error) {
       console.error('Get lead error:', error);
       res.status(500).json({ error: "Internal server error" });

@@ -65,7 +65,13 @@ export default function IntakeWizard() {
     mutationFn: async (data: LeadFormData) => {
       return apiRequest('POST', '/api/lead', data);
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
+      // Store leadId for AI recommendation flow
+      if (response?.leadId) {
+        localStorage.setItem('lastLeadId', response.leadId);
+        console.log('✅ Lead ID stored:', response.leadId);
+      }
+      
       toast({
         title: "Assessment submitted!",
         description: "We'll email you your personalized recommendations within 24 hours.",
