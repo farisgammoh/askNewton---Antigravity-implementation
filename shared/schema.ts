@@ -77,6 +77,7 @@ export const personas = pgTable("personas", {
     fairValue: number;
   }>().notNull(),
   systemPrompt: text("system_prompt").notNull(),
+  imageUrl: text("image_url"), // AI-generated persona image
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
@@ -228,3 +229,32 @@ export type MessageFormData = z.infer<typeof messageSchema>;
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
 export type FileUploadData = z.infer<typeof fileUploadSchema>;
+
+// Persona selections table - one selection per email
+export const personaSelections = pgTable("persona_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(), // One selection per email
+  personaId: varchar("persona_id").references(() => personas.id).notNull(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// Persona selection schemas
+export const insertPersonaSelectionSchema = createInsertSchema(personaSelections).omit({
+  id: true,
+  createdAt: true
+});
+
+export const personaSelectionSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  personaId: z.string().uuid("Invalid persona ID"),
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  phone: z.string().optional(),
+  notes: z.string().optional()
+});
+
+export type InsertPersonaSelection = z.infer<typeof insertPersonaSelectionSchema>;
+export type PersonaSelection = typeof personaSelections.$inferSelect;
+export type PersonaSelectionFormData = z.infer<typeof personaSelectionSchema>;
