@@ -679,7 +679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Google Ads lead endpoint - accepts leads from Google Ads campaigns
-  app.post("/google-ads-leads", async (req, res) => {
+  app.post("/api/google-ads-leads", async (req, res) => {
     try {
       console.log("📱 New Google Ads lead received:", req.body);
       
