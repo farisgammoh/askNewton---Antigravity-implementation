@@ -6,7 +6,7 @@ import { z } from "zod";
 import { sendLeadNotification, type LeadNotificationData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
-import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, personas, recommendations } from "@shared/schema";
+import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, personas, recommendations } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -675,6 +675,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('AI test error:', error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Google Ads lead endpoint - accepts leads from Google Ads campaigns
+  app.post("/google-ads-leads", async (req, res) => {
+    try {
+      console.log("📱 New Google Ads lead received:", req.body);
+      
+      const parsed = googleAdsLeadSchema.parse(req.body);
+      
+      // Map Google Ads lead data to our existing lead structure
+      const mappedLead = {
+        // Combine name fields if needed
+        name: parsed.name || `${parsed.first_name || ''} ${parsed.last_name || ''}`.trim(),
+        email: parsed.email,
+        phone: parsed.phone || parsed.phone_number || undefined,
+        
+        // Use ZIP code from either field
+        zip: parsed.zip_code || parsed.postal_code || "90210", // Default to Beverly Hills if not provided
+        
+        // Map persona type or default to 'traveler' for Google Ads leads
+        persona: parsed.persona_type || 'traveler',
+        
+        // Map stay length or default
+        stayLength: parsed.stay_length || 'lt90',
+        
+        // Map arrival date or default to near future
+        arrivalDate: parsed.arrival_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        
+        // Default values for required fields
+        currentCoverage: parsed.current_coverage || 'none',
+        preexisting: false, // Default to false for Google Ads leads
+        dependents: 'none', // Default to none
+        consent: true, // Implicit consent for Google Ads lead form submission
+        
+        // Combine notes from various message fields
+        notes: [
+          parsed.notes,
+          parsed.message,
+          parsed.gclid ? `Google Click ID: ${parsed.gclid}` : null,
+          parsed.campaign_id ? `Campaign: ${parsed.campaign_id}` : null,
+          parsed.keyword ? `Keyword: ${parsed.keyword}` : null
+        ].filter(Boolean).join(' | ') || `Google Ads lead submitted on ${new Date().toLocaleDateString()}`,
+        
+        // Optional fields
+        status: undefined, // Let user specify later
+        address: undefined,
+        budgetOrNetwork: undefined
+      };
+      
+      // Create lead using existing storage system
+      const storageInstance = await storage();
+      const lead = await storageInstance.createLead(mappedLead);
+
+      // Forward to webhook if configured (same as regular leads)
+      const webhookUrl = process.env.WEBHOOK_URL;
+      if (webhookUrl) {
+        try {
+          await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              ...lead, 
+              source: 'google_ads',
+              original_data: parsed 
+            })
+          });
+          console.log("📡 Google Ads lead forwarded to webhook");
+        } catch (error) {
+          console.error('Google Ads webhook error:', error);
+          // Don't fail the request if webhook fails
+        }
+      }
+
+      // Send email notification using SendGrid (same as regular leads)
+      try {
+        await sendLeadNotification(lead);
+        console.log("📧 Google Ads lead notification sent");
+      } catch (error) {
+        console.error('Google Ads email notification error:', error);
+        // Don't fail the request if email fails
+      }
+
+      // Send to HubSpot CRM (same as regular leads)
+      try {
+        const hubspotResult = await hubSpotService.createContact(lead);
+        if (hubspotResult.success) {
+          console.log(`📊 Google Ads lead sent to HubSpot: ${lead.email}`);
+        } else {
+          console.warn(`⚠️ Google Ads HubSpot integration failed: ${hubspotResult.error}`);
+        }
+      } catch (error) {
+        console.error('Google Ads HubSpot integration error:', error);
+        // Don't fail the request if HubSpot fails
+      }
+
+      console.log(`✅ Google Ads lead processed successfully: ${lead.email}`);
+      
+      res.status(200).json({ 
+        success: true, 
+        leadId: lead.id,
+        message: "Lead received and processed successfully" 
+      });
+      
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error('Google Ads lead validation failed:', error.errors);
+        res.status(400).json({ 
+          error: "Invalid lead data", 
+          details: error.errors,
+          message: "Please check the required fields and try again"
+        });
+      } else {
+        console.error('Google Ads lead processing error:', error);
+        res.status(500).json({ 
+          error: "Internal server error",
+          message: "Failed to process Google Ads lead"
+        });
+      }
     }
   });
 
