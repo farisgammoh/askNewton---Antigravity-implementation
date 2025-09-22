@@ -157,3 +157,74 @@ export type PersonaFormData = z.infer<typeof personaSchema>;
 export type InsertRecommendation = z.infer<typeof insertRecommendationSchema>;
 export type Recommendation = typeof recommendations.$inferSelect;
 export type RecommendationFormData = z.infer<typeof recommendationSchema>;
+
+// Chat system tables
+export const conversations = pgTable("conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id"),
+  title: text("title").default("New Chat"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+export const messages = pgTable("messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").references(() => conversations.id).notNull(),
+  role: text("role").notNull(), // 'user', 'assistant', 'system'
+  content: text("content").notNull(),
+  fileUrls: jsonb("file_urls").$type<string[]>(),
+  timestamp: timestamp("timestamp").defaultNow()
+});
+
+export const uploadedFiles = pgTable("uploaded_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  originalName: text("original_name").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: text("file_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  storageUrl: text("storage_url").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow()
+});
+
+// Chat schemas
+export const insertConversationSchema = createInsertSchema(conversations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  timestamp: true
+});
+
+export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
+  id: true,
+  uploadedAt: true
+});
+
+export const messageSchema = z.object({
+  conversationId: z.string().uuid().optional(),
+  role: z.enum(['user', 'assistant', 'system']),
+  content: z.string().min(1, "Message cannot be empty"),
+  fileUrls: z.array(z.string().url()).optional()
+});
+
+export const fileUploadSchema = z.object({
+  originalName: z.string(),
+  fileName: z.string(),
+  fileSize: z.string(),
+  mimeType: z.string(),
+  storageUrl: z.string().url()
+});
+
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type Conversation = typeof conversations.$inferSelect;
+
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
+export type MessageFormData = z.infer<typeof messageSchema>;
+
+export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
+export type UploadedFile = typeof uploadedFiles.$inferSelect;
+export type FileUploadData = z.infer<typeof fileUploadSchema>;

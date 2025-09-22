@@ -14,6 +14,7 @@ import Thanks from "@/pages/thanks";
 import Dashboard from "@/pages/dashboard";
 import PersonasPage from "@/pages/personas";
 import RecommendationPage from "@/pages/recommendation";
+import ChatPage from "@/pages/chat";
 import Terms from "@/pages/legal/terms";
 import Privacy from "./pages/legal/privacy";
 import Disclosures from "./pages/legal/disclosures";
@@ -34,6 +35,7 @@ function Router() {
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/personas" component={PersonasPage} />
           <Route path="/recommendation/:leadId" component={RecommendationPage} />
+          <Route path="/chat" component={ChatPage} />
           <Route path="/legal/terms" component={Terms} />
           <Route path="/legal/privacy" component={Privacy} />
           <Route path="/legal/disclosures" component={Disclosures} />

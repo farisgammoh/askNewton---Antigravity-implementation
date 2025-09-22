@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, users, leads, personas, recommendations } from "@shared/schema";
+import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, users, leads, personas, recommendations, conversations, messages, uploadedFiles } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
@@ -18,6 +18,19 @@ export interface IStorage {
   // Recommendation methods
   createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
   getLeadRecommendations(leadId: string): Promise<Recommendation[]>;
+  
+  // Chat methods
+  createConversation(conversation: InsertConversation): Promise<Conversation>;
+  getConversations(userId?: string): Promise<Conversation[]>;
+  getConversation(id: string): Promise<Conversation | undefined>;
+  updateConversationTitle(id: string, title: string): Promise<void>;
+  
+  createMessage(message: InsertMessage): Promise<Message>;
+  getMessages(conversationId: string): Promise<Message[]>;
+  
+  // File upload methods
+  createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
+  getUploadedFile(id: string): Promise<UploadedFile | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -99,6 +112,60 @@ export class DatabaseStorage implements IStorage {
   async getLeadRecommendations(leadId: string): Promise<Recommendation[]> {
     return await this.db.select().from(recommendations).where(eq(recommendations.leadId, leadId));
   }
+  
+  // Chat methods
+  async createConversation(insertConversation: InsertConversation): Promise<Conversation> {
+    const [conversation] = await this.db
+      .insert(conversations)
+      .values(insertConversation)
+      .returning();
+    return conversation;
+  }
+
+  async getConversations(userId?: string): Promise<Conversation[]> {
+    if (userId) {
+      return await this.db.select().from(conversations).where(eq(conversations.userId, userId));
+    }
+    return await this.db.select().from(conversations);
+  }
+
+  async getConversation(id: string): Promise<Conversation | undefined> {
+    const [conversation] = await this.db.select().from(conversations).where(eq(conversations.id, id));
+    return conversation || undefined;
+  }
+
+  async updateConversationTitle(id: string, title: string): Promise<void> {
+    await this.db.update(conversations)
+      .set({ title, updatedAt: new Date() })
+      .where(eq(conversations.id, id));
+  }
+
+  async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    const [message] = await this.db
+      .insert(messages)
+      .values(insertMessage)
+      .returning();
+    return message;
+  }
+
+  async getMessages(conversationId: string): Promise<Message[]> {
+    return await this.db.select().from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.timestamp);
+  }
+
+  async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
+    const [file] = await this.db
+      .insert(uploadedFiles)
+      .values(insertFile)
+      .returning();
+    return file;
+  }
+
+  async getUploadedFile(id: string): Promise<UploadedFile | undefined> {
+    const [file] = await this.db.select().from(uploadedFiles).where(eq(uploadedFiles.id, id));
+    return file || undefined;
+  }
 }
 
 // Keep MemStorage for fallback
@@ -107,12 +174,18 @@ export class MemStorage implements IStorage {
   private leads: Map<string, Lead>;
   private personas: Map<string, Persona>;
   private recommendations: Map<string, Recommendation>;
+  private conversations: Map<string, Conversation>;
+  private messages: Map<string, Message>;
+  private uploadedFiles: Map<string, UploadedFile>;
 
   constructor() {
     this.users = new Map();
     this.leads = new Map();
     this.personas = new Map();
     this.recommendations = new Map();
+    this.conversations = new Map();
+    this.messages = new Map();
+    this.uploadedFiles = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -197,6 +270,75 @@ export class MemStorage implements IStorage {
 
   async getLeadRecommendations(leadId: string): Promise<Recommendation[]> {
     return Array.from(this.recommendations.values()).filter(r => r.leadId === leadId);
+  }
+  
+  // Chat methods
+  async createConversation(insertConversation: InsertConversation): Promise<Conversation> {
+    const id = randomUUID();
+    const conversation: Conversation = {
+      ...insertConversation,
+      id,
+      title: insertConversation.title || "New Chat",
+      userId: insertConversation.userId || null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.conversations.set(id, conversation);
+    return conversation;
+  }
+
+  async getConversations(userId?: string): Promise<Conversation[]> {
+    const allConversations = Array.from(this.conversations.values());
+    if (userId) {
+      return allConversations.filter(c => c.userId === userId);
+    }
+    return allConversations;
+  }
+
+  async getConversation(id: string): Promise<Conversation | undefined> {
+    return this.conversations.get(id);
+  }
+
+  async updateConversationTitle(id: string, title: string): Promise<void> {
+    const conversation = this.conversations.get(id);
+    if (conversation) {
+      conversation.title = title;
+      conversation.updatedAt = new Date();
+      this.conversations.set(id, conversation);
+    }
+  }
+
+  async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    const id = randomUUID();
+    const message: Message = {
+      ...insertMessage,
+      id,
+      fileUrls: insertMessage.fileUrls || null,
+      timestamp: new Date()
+    };
+    this.messages.set(id, message);
+    return message;
+  }
+
+  async getMessages(conversationId: string): Promise<Message[]> {
+    return Array.from(this.messages.values())
+      .filter(m => m.conversationId === conversationId)
+      .sort((a, b) => (a.timestamp?.getTime() || 0) - (b.timestamp?.getTime() || 0));
+  }
+
+  async createUploadedFile(insertFile: InsertUploadedFile): Promise<UploadedFile> {
+    const id = randomUUID();
+    const file: UploadedFile = {
+      ...insertFile,
+      id,
+      uploadedAt: new Date()
+    };
+    this.uploadedFiles.set(id, file);
+    return file;
+  }
+
+  async getUploadedFile(id: string): Promise<UploadedFile | undefined> {
+    return this.uploadedFiles.get(id);
   }
 }
 

@@ -42,6 +42,12 @@ interface PersonalizedRecommendation {
   actionItems: string[];
 }
 
+interface ChatMessage {
+  role: string;
+  content: string;
+  timestamp?: Date | null;
+}
+
 class AskNewtonAI {
   private readonly model = "gpt-5";
   private openai: OpenAI | null = null;
@@ -293,6 +299,66 @@ Respond with a JSON object:
         success: false, 
         error: `Connection test failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
       };
+    }
+  }
+
+  /**
+   * Generate AI chat response for health insurance questions
+   */
+  async generateChatResponse(userMessage: string, conversationContext: ChatMessage[] = []): Promise<string> {
+    const openai = this.getOpenAI();
+    
+    // Build conversation context with system prompt
+    const messages = [
+      {
+        role: "system",
+        content: `You are AskNewton, an AI assistant specializing in California health insurance guidance. You follow Newtonian service principles: Speed + Information + Communication = Quality Customer Service.
+
+Your core principles:
+- Reliability: Provide accurate, trustworthy information
+- Reassurance: Offer comfort and confidence to confused customers
+- Relevance: Focus on what matters most to their specific situation
+- Simplicity: Explain complex insurance topics in clear, easy language
+- Timeliness: Give prompt, actionable responses
+- Knowledgeability: Demonstrate expertise in California insurance landscape
+- Fair Value: Help customers find the best coverage for their needs and budget
+
+You help newcomers to California navigate health insurance options including:
+- Nomads (remote workers/contractors)
+- Travelers (1-6 month visitors)
+- Students (F-1/J-1 visa holders)
+
+Provide practical, specific advice. When appropriate, recommend they speak with a licensed professional for personalized guidance. Keep responses conversational but informative.`
+      },
+      // Add conversation context (last few messages)
+      ...conversationContext.slice(-4).map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      })),
+      // Add current user message
+      {
+        role: "user",
+        content: userMessage
+      }
+    ];
+
+    try {
+      // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+      const completion = await openai.chat.completions.create({
+        model: this.model,
+        messages: messages as any,
+        max_tokens: 1000
+      });
+
+      const response = completion.choices[0]?.message?.content;
+      if (!response) {
+        throw new Error("No response generated");
+      }
+
+      return response;
+    } catch (error) {
+      console.error("OpenAI chat completion error:", error);
+      throw new Error("Failed to generate AI response");
     }
   }
 }

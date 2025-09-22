@@ -6,7 +6,7 @@ import { z } from "zod";
 import { sendLeadNotification, type LeadNotificationData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
-import { personaSchema, recommendationSchema, personas, recommendations } from "@shared/schema";
+import { personaSchema, recommendationSchema, messageSchema, personas, recommendations } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -342,6 +342,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(recommendations);
     } catch (error) {
       console.error('Get recommendations error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Chat API endpoints
+  // Create new conversation
+  app.post("/api/conversations", async (req, res) => {
+    try {
+      const { title, userId } = req.body;
+      const storageInstance = await storage();
+      
+      const conversation = await storageInstance.createConversation({
+        title: title || "New Chat",
+        userId: userId || null
+      });
+      
+      res.status(201).json(conversation);
+    } catch (error) {
+      console.error('Create conversation error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get all conversations
+  app.get("/api/conversations", async (req, res) => {
+    try {
+      const { userId } = req.query;
+      const storageInstance = await storage();
+      
+      const conversations = await storageInstance.getConversations(userId as string);
+      res.json(conversations);
+    } catch (error) {
+      console.error('Get conversations error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get conversation by ID
+  app.get("/api/conversations/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const storageInstance = await storage();
+      
+      const conversation = await storageInstance.getConversation(id);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+      
+      res.json(conversation);
+    } catch (error) {
+      console.error('Get conversation error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Update conversation title
+  app.put("/api/conversations/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title } = req.body;
+      
+      if (!title) {
+        return res.status(400).json({ error: "Title is required" });
+      }
+      
+      const storageInstance = await storage();
+      await storageInstance.updateConversationTitle(id, title);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Update conversation error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create new message
+  app.post("/api/messages", async (req, res) => {
+    try {
+      const validation = messageSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validation.error.errors 
+        });
+      }
+
+      const { conversationId, role, content, fileUrls } = validation.data;
+      const storageInstance = await storage();
+      
+      // Create user message
+      const userMessage = await storageInstance.createMessage({
+        conversationId: conversationId!,
+        role,
+        content,
+        fileUrls: fileUrls || null
+      });
+
+      // If it's a user message, generate AI response
+      if (role === 'user' && askNewtonAI.isConfigured()) {
+        try {
+          // Get conversation context (last few messages)
+          const messages = await storageInstance.getMessages(conversationId!);
+          const recentMessages = messages.slice(-5); // Last 5 messages for context
+
+          const aiResponse = await askNewtonAI.generateChatResponse(content, recentMessages);
+          
+          // Create AI response message
+          await storageInstance.createMessage({
+            conversationId: conversationId!,
+            role: 'assistant',
+            content: aiResponse,
+            fileUrls: null
+          });
+
+          // Update conversation title with first user message if it's still "New Chat"
+          const conversation = await storageInstance.getConversation(conversationId!);
+          if (conversation && conversation.title === "New Chat" && content.length > 0) {
+            const titlePreview = content.length > 50 ? content.substring(0, 47) + "..." : content;
+            await storageInstance.updateConversationTitle(conversationId!, titlePreview);
+          }
+        } catch (aiError) {
+          console.error('AI response generation failed:', aiError);
+          // Don't fail the request, just log the error
+        }
+      }
+      
+      res.status(201).json(userMessage);
+    } catch (error) {
+      console.error('Create message error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get messages for a conversation
+  app.get("/api/messages/:conversationId", async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const storageInstance = await storage();
+      
+      const messages = await storageInstance.getMessages(conversationId);
+      res.json(messages);
+    } catch (error) {
+      console.error('Get messages error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Simple file upload endpoint (basic implementation)
+  app.post("/api/upload", async (req, res) => {
+    try {
+      // This is a placeholder implementation
+      // In a real implementation, you would use multer or similar for file handling
+      // and integrate with object storage
+      
+      res.status(501).json({ 
+        error: "File upload not yet implemented",
+        message: "File upload functionality requires object storage setup" 
+      });
+    } catch (error) {
+      console.error('File upload error:', error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
