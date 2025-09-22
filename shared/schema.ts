@@ -57,8 +57,103 @@ export const leadSchema = z.object({
   consent: z.literal(true, { errorMap: () => ({ message: "You must agree to the terms" }) })
 });
 
+// AI Personas table for Newtonian service design
+export const personas = pgTable("personas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  title: text("title").notNull(),
+  personality: text("personality").notNull(),
+  expertise: text("expertise").notNull(),
+  communicationStyle: text("communication_style").notNull(),
+  specialties: jsonb("specialties").$type<string[]>().notNull(),
+  targetPersonas: jsonb("target_personas").$type<string[]>().notNull(), // nomad, traveler, student
+  newtonianValues: jsonb("newtonian_values").$type<{
+    reliability: number;
+    reassurance: number; 
+    relevance: number;
+    simplicity: number;
+    timeliness: number;
+    knowledgeability: number;
+    fairValue: number;
+  }>().notNull(),
+  systemPrompt: text("system_prompt").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// Persona recommendations table
+export const recommendations = pgTable("recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  leadId: varchar("lead_id").references(() => leads.id).notNull(),
+  personaId: varchar("persona_id").references(() => personas.id).notNull(),
+  recommendation: text("recommendation").notNull(),
+  reasoning: text("reasoning").notNull(),
+  confidence: jsonb("confidence").$type<{
+    overall: number;
+    relevance: number;
+    expertise: number;
+  }>().notNull(),
+  actionItems: jsonb("action_items").$type<string[]>().notNull(),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// Persona schemas
+export const insertPersonaSchema = createInsertSchema(personas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertRecommendationSchema = createInsertSchema(recommendations).omit({
+  id: true,
+  createdAt: true
+});
+
+// Validation schemas based on Newtonian principles
+export const personaSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  title: z.string().min(5, "Title must be descriptive"),
+  personality: z.string().min(20, "Personality must be detailed"),
+  expertise: z.string().min(20, "Expertise must be detailed"),
+  communicationStyle: z.enum(['warm_professional', 'direct_helpful', 'friendly_expert', 'reassuring_guide', 'knowledgeable_advisor']),
+  specialties: z.array(z.string()).min(3, "Must have at least 3 specialties"),
+  targetPersonas: z.array(z.enum(['nomad', 'traveler', 'student'])).min(1),
+  newtonianValues: z.object({
+    reliability: z.number().min(1).max(10),
+    reassurance: z.number().min(1).max(10),
+    relevance: z.number().min(1).max(10),
+    simplicity: z.number().min(1).max(10),
+    timeliness: z.number().min(1).max(10),
+    knowledgeability: z.number().min(1).max(10),
+    fairValue: z.number().min(1).max(10)
+  }),
+  systemPrompt: z.string().min(50, "System prompt must be comprehensive")
+});
+
+export const recommendationSchema = z.object({
+  leadId: z.string().uuid(),
+  personaId: z.string().uuid(),
+  recommendation: z.string().min(50, "Recommendation must be detailed"),
+  reasoning: z.string().min(30, "Reasoning must be clear"),
+  confidence: z.object({
+    overall: z.number().min(0).max(1),
+    relevance: z.number().min(0).max(1),
+    expertise: z.number().min(0).max(1)
+  }),
+  actionItems: z.array(z.string()).min(1, "Must have at least one action item")
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertLead = z.infer<typeof insertLeadSchema>;
 export type Lead = typeof leads.$inferSelect;
 export type LeadFormData = z.infer<typeof leadSchema>;
+
+export type InsertPersona = z.infer<typeof insertPersonaSchema>;
+export type Persona = typeof personas.$inferSelect;
+export type PersonaFormData = z.infer<typeof personaSchema>;
+
+export type InsertRecommendation = z.infer<typeof insertRecommendationSchema>;
+export type Recommendation = typeof recommendations.$inferSelect;
+export type RecommendationFormData = z.infer<typeof recommendationSchema>;

@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Lead, type InsertLead, users, leads } from "@shared/schema";
+import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, users, leads, personas, recommendations } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
@@ -8,6 +8,16 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   createLead(lead: InsertLead): Promise<Lead>;
   getLeads(): Promise<Lead[]>;
+  getLead(id: string): Promise<Lead | undefined>;
+  
+  // Persona methods
+  createPersona(persona: InsertPersona): Promise<Persona>;
+  getPersonas(): Promise<Persona[]>;
+  getPersona(id: string): Promise<Persona | undefined>;
+  
+  // Recommendation methods
+  createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
+  getLeadRecommendations(leadId: string): Promise<Recommendation[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -55,16 +65,54 @@ export class DatabaseStorage implements IStorage {
   async getLeads(): Promise<Lead[]> {
     return await this.db.select().from(leads);
   }
+
+  async getLead(id: string): Promise<Lead | undefined> {
+    const [lead] = await this.db.select().from(leads).where(eq(leads.id, id));
+    return lead || undefined;
+  }
+
+  async createPersona(insertPersona: InsertPersona): Promise<Persona> {
+    const [persona] = await this.db
+      .insert(personas)
+      .values(insertPersona)
+      .returning();
+    return persona;
+  }
+
+  async getPersonas(): Promise<Persona[]> {
+    return await this.db.select().from(personas).where(eq(personas.isActive, true));
+  }
+
+  async getPersona(id: string): Promise<Persona | undefined> {
+    const [persona] = await this.db.select().from(personas).where(eq(personas.id, id));
+    return persona || undefined;
+  }
+
+  async createRecommendation(insertRecommendation: InsertRecommendation): Promise<Recommendation> {
+    const [recommendation] = await this.db
+      .insert(recommendations)
+      .values(insertRecommendation)
+      .returning();
+    return recommendation;
+  }
+
+  async getLeadRecommendations(leadId: string): Promise<Recommendation[]> {
+    return await this.db.select().from(recommendations).where(eq(recommendations.leadId, leadId));
+  }
 }
 
 // Keep MemStorage for fallback
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
   private leads: Map<string, Lead>;
+  private personas: Map<string, Persona>;
+  private recommendations: Map<string, Recommendation>;
 
   constructor() {
     this.users = new Map();
     this.leads = new Map();
+    this.personas = new Map();
+    this.recommendations = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -104,6 +152,51 @@ export class MemStorage implements IStorage {
 
   async getLeads(): Promise<Lead[]> {
     return Array.from(this.leads.values());
+  }
+
+  async getLead(id: string): Promise<Lead | undefined> {
+    return this.leads.get(id);
+  }
+
+  async createPersona(insertPersona: InsertPersona): Promise<Persona> {
+    const id = randomUUID();
+    const persona: Persona = { 
+      ...insertPersona,
+      specialties: insertPersona.specialties as string[],
+      targetPersonas: insertPersona.targetPersonas as string[],
+      newtonianValues: insertPersona.newtonianValues as any,
+      isActive: insertPersona.isActive ?? true,
+      id, 
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.personas.set(id, persona);
+    return persona;
+  }
+
+  async getPersonas(): Promise<Persona[]> {
+    return Array.from(this.personas.values()).filter(p => p.isActive);
+  }
+
+  async getPersona(id: string): Promise<Persona | undefined> {
+    return this.personas.get(id);
+  }
+
+  async createRecommendation(insertRecommendation: InsertRecommendation): Promise<Recommendation> {
+    const id = randomUUID();
+    const recommendation: Recommendation = { 
+      ...insertRecommendation,
+      actionItems: insertRecommendation.actionItems as string[],
+      confidence: insertRecommendation.confidence as any,
+      id, 
+      createdAt: new Date()
+    };
+    this.recommendations.set(id, recommendation);
+    return recommendation;
+  }
+
+  async getLeadRecommendations(leadId: string): Promise<Recommendation[]> {
+    return Array.from(this.recommendations.values()).filter(r => r.leadId === leadId);
   }
 }
 
