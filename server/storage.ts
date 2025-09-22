@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, users, leads, personas, recommendations, conversations, messages, uploadedFiles } from "@shared/schema";
+import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, type PersonaSelection, type InsertPersonaSelection, users, leads, personas, recommendations, conversations, messages, uploadedFiles, personaSelections } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
@@ -31,6 +31,11 @@ export interface IStorage {
   // File upload methods
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   getUploadedFile(id: string): Promise<UploadedFile | undefined>;
+  
+  // Persona selection methods
+  createPersonaSelection(selection: InsertPersonaSelection): Promise<PersonaSelection>;
+  getPersonaSelectionByEmail(email: string): Promise<PersonaSelection | undefined>;
+  getPersonaSelections(): Promise<PersonaSelection[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -166,6 +171,25 @@ export class DatabaseStorage implements IStorage {
     const [file] = await this.db.select().from(uploadedFiles).where(eq(uploadedFiles.id, id));
     return file || undefined;
   }
+
+  // Persona selection methods
+  async createPersonaSelection(insertSelection: InsertPersonaSelection): Promise<PersonaSelection> {
+    const [selection] = await this.db
+      .insert(personaSelections)
+      .values(insertSelection)
+      .returning();
+    return selection;
+  }
+
+  async getPersonaSelectionByEmail(email: string): Promise<PersonaSelection | undefined> {
+    const [selection] = await this.db.select().from(personaSelections)
+      .where(eq(personaSelections.email, email));
+    return selection || undefined;
+  }
+
+  async getPersonaSelections(): Promise<PersonaSelection[]> {
+    return await this.db.select().from(personaSelections);
+  }
 }
 
 // Keep MemStorage for fallback
@@ -177,6 +201,7 @@ export class MemStorage implements IStorage {
   private conversations: Map<string, Conversation>;
   private messages: Map<string, Message>;
   private uploadedFiles: Map<string, UploadedFile>;
+  private personaSelections: Map<string, PersonaSelection>;
 
   constructor() {
     this.users = new Map();
@@ -186,6 +211,7 @@ export class MemStorage implements IStorage {
     this.conversations = new Map();
     this.messages = new Map();
     this.uploadedFiles = new Map();
+    this.personaSelections = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -339,6 +365,27 @@ export class MemStorage implements IStorage {
 
   async getUploadedFile(id: string): Promise<UploadedFile | undefined> {
     return this.uploadedFiles.get(id);
+  }
+
+  // Persona selection methods
+  async createPersonaSelection(insertSelection: InsertPersonaSelection): Promise<PersonaSelection> {
+    const id = randomUUID();
+    const selection: PersonaSelection = {
+      ...insertSelection,
+      id,
+      createdAt: new Date()
+    };
+    this.personaSelections.set(id, selection);
+    return selection;
+  }
+
+  async getPersonaSelectionByEmail(email: string): Promise<PersonaSelection | undefined> {
+    return Array.from(this.personaSelections.values())
+      .find(selection => selection.email === email);
+  }
+
+  async getPersonaSelections(): Promise<PersonaSelection[]> {
+    return Array.from(this.personaSelections.values());
   }
 }
 

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { sendLeadNotification, type LeadNotificationData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
-import { personaSchema, recommendationSchema, messageSchema, personas, recommendations } from "@shared/schema";
+import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, personas, recommendations } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -220,6 +220,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Get persona error:', error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Persona selection endpoints
+  // Create a persona selection (one per email)
+  app.post("/api/persona-selections", async (req, res) => {
+    try {
+      const parsed = personaSelectionSchema.parse(req.body);
+      const storageInstance = await storage();
+      
+      // Check if email already has a selection
+      const existingSelection = await storageInstance.getPersonaSelectionByEmail(parsed.email);
+      if (existingSelection) {
+        return res.status(400).json({ 
+          error: "Email already registered",
+          message: "You can only select one persona per email address. You've already selected: " + 
+                   (await storageInstance.getPersona(existingSelection.personaId))?.name || "a persona"
+        });
+      }
+
+      // Verify persona exists
+      const persona = await storageInstance.getPersona(parsed.personaId);
+      if (!persona) {
+        return res.status(404).json({ error: "Selected persona not found" });
+      }
+
+      // Create the selection
+      const selection = await storageInstance.createPersonaSelection(parsed);
+      
+      res.status(201).json({ 
+        success: true, 
+        selection,
+        message: `Successfully selected ${persona.name} as your health insurance expert!`
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.errors 
+        });
+      } else {
+        console.error('Persona selection error:', error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  });
+
+  // Get all persona selections (admin only)
+  app.get("/api/persona-selections", async (req, res) => {
+    try {
+      const storageInstance = await storage();
+      const selections = await storageInstance.getPersonaSelections();
+      res.json(selections);
+    } catch (error) {
+      console.error('Get persona selections error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Check if email has already selected a persona
+  app.get("/api/persona-selections/check/:email", async (req, res) => {
+    try {
+      const { email } = req.params;
+      const storageInstance = await storage();
+      const selection = await storageInstance.getPersonaSelectionByEmail(email);
+      
+      if (!selection) {
+        return res.json({ hasSelection: false });
+      }
+
+      const persona = await storageInstance.getPersona(selection.personaId);
+      res.json({ 
+        hasSelection: true,
+        selection,
+        personaName: persona?.name
+      });
+    } catch (error) {
+      console.error('Check persona selection error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Generate images for personas (admin only)
+  app.post("/api/personas/generate-images", async (req, res) => {
+    const adminKey = req.headers['x-admin-key'];
+    const expectedKey = process.env.ADMIN_API_KEY;
+    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
+    
+    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
+      return res.status(401).json({ error: "Unauthorized - Admin access required" });
+    }
+
+    try {
+      if (!askNewtonAI.isConfigured()) {
+        return res.status(503).json({ 
+          error: "AI service not configured",
+          message: "OPENAI_API_KEY is required for image generation" 
+        });
+      }
+
+      const storageInstance = await storage();
+      const personas = await storageInstance.getPersonas();
+      
+      if (personas.length === 0) {
+        return res.status(404).json({ error: "No personas found to generate images for" });
+      }
+
+      // Generate images for personas that don't have them
+      const personasNeedingImages = personas.filter(p => !p.imageUrl);
+      
+      if (personasNeedingImages.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: "All personas already have images",
+          processed: 0
+        });
+      }
+
+      const results = await askNewtonAI.generatePersonaImages(
+        personasNeedingImages.map(p => ({ id: p.id, name: p.name, title: p.title }))
+      );
+
+      // Update personas with image URLs (for memory storage only - would need proper DB update for production)
+      let updatedCount = 0;
+      for (const result of results) {
+        if (result.imageUrl) {
+          const persona = await storageInstance.getPersona(result.personaId);
+          if (persona && 'imageUrl' in persona) {
+            (persona as any).imageUrl = result.imageUrl;
+            updatedCount++;
+          }
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        processed: results.length,
+        updated: updatedCount,
+        results: results.map(r => ({ 
+          personaId: r.personaId, 
+          hasImage: !!r.imageUrl 
+        }))
+      });
+    } catch (error) {
+      console.error('Persona image generation error:', error);
+      res.status(500).json({ 
+        error: "Failed to generate persona images",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 

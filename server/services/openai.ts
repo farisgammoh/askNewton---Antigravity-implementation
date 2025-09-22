@@ -361,6 +361,69 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
       throw new Error("Failed to generate AI response");
     }
   }
+
+  /**
+   * Generate AI image for persona using DALL-E 3
+   */
+  async generatePersonaImage(personaName: string, personaTitle: string): Promise<string | null> {
+    if (!this.isConfigured()) {
+      console.warn('OpenAI not configured - cannot generate persona image');
+      return null;
+    }
+
+    try {
+      const prompt = `A professional headshot portrait of a health insurance expert named ${personaName}, who works as a ${personaTitle}. 
+      Modern, approachable, and trustworthy appearance. Clean business attire, warm smile, 
+      professional lighting. High quality, realistic style, looking directly at camera. 
+      Background should be neutral and professional. California-based health insurance professional.`;
+
+      const openai = this.getOpenAI();
+      const response = await openai.images.generate({
+        model: "dall-e-3",
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "standard"
+      });
+
+      const imageUrl = response.data[0]?.url;
+      if (imageUrl) {
+        console.log(`✅ Generated persona image for ${personaName}`);
+        return imageUrl;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Error generating persona image for ${personaName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate images for multiple personas
+   */
+  async generatePersonaImages(personas: Array<{ id: string; name: string; title: string }>): Promise<Array<{ personaId: string; imageUrl: string | null }>> {
+    if (!this.isConfigured()) {
+      console.warn('OpenAI not configured - cannot generate persona images');
+      return personas.map(p => ({ personaId: p.id, imageUrl: null }));
+    }
+
+    const results = [];
+    for (const persona of personas) {
+      try {
+        const imageUrl = await this.generatePersonaImage(persona.name, persona.title);
+        results.push({ personaId: persona.id, imageUrl });
+        
+        // Add delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`Failed to generate image for ${persona.name}:`, error);
+        results.push({ personaId: persona.id, imageUrl: null });
+      }
+    }
+
+    return results;
+  }
 }
 
 // Export singleton instance
