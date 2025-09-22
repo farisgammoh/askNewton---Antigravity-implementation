@@ -54,5 +54,9 @@ externalPort = 80
 localPort = 40239
 externalPort = 3000
 
+[[ports]]
+localPort = 41475
+externalPort = 3003
+
 [agent]
 integrations = ["javascript_database:1.0.0", "javascript_sendgrid:1.0.0", "javascript_openai:1.0.0"]
