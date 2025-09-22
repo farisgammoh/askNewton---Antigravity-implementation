@@ -386,7 +386,7 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
         quality: "standard"
       });
 
-      const imageUrl = response.data[0]?.url;
+      const imageUrl = response.data?.[0]?.url;
       if (imageUrl) {
         console.log(`✅ Generated persona image for ${personaName}`);
         return imageUrl;

@@ -1,0 +1,155 @@
+Here’s a single, copy-paste Replit prompt that scaffolds what you asked for—model-swappable onboarding flows, API comparisons (cost/accuracy/privacy), daily usage/cost monitoring, and a privacy map for sensitive flows.
+
+⸻
+
+REPLIT PROMPT (copy everything below):
+
+Build a full working starter for AskNewton: a Replit-powered, persona-driven onboarding service with model-swappable AI. Use Node.js + TypeScript with Express for the API and a minimal Next.js client for the flows. Keep it lightweight and self-contained (SQLite for data). Deliver clean, commented code and a clear README.
+
+0) Project Setup
+	•	Monorepo style:
+
+/apps
+  /api  (Node+TS, Express)
+  /web  (Next.js 14, App Router)
+/packages
+  /ai-providers   (shared SDK wrappers)
+  /types          (shared TypeScript types)
+
+
+	•	Scripts:
+	•	root: dev runs both api & web concurrently
+	•	api: dev:api, migrate, seed
+	•	web: dev:web
+	•	Env:
+	•	.env.example with: OPENAI_API_KEY, ANTHROPIC_API_KEY, HF_API_KEY, PRIVACY_MODE=strict|standard, ALERT_SLACK_WEBHOOK (or ALERT_EMAIL), BASE_CURRENCY=USD.
+	•	DB: SQLite via Drizzle ORM (or Prisma if faster). Tables: events, sessions, cost_usage, privacy_logs, ab_tests, personas.
+
+1) Key AI Tasks (implement end-to-end)
+
+Implement these API routes with clear separation of concerns and testable services:
+	1.	Onboarding nudges
+	•	POST /v1/onboarding/nudge
+	•	Input: { personaId, stepId, context }
+	•	Output: { message, suggestions, nextStepHint }
+	2.	Coverage intent parsing
+	•	POST /v1/coverage/intent
+	•	Input: { freeText, locale }
+	•	Output: { intents: [{type, score}], entities: [{name, value, confidence}], riskFlags: [...] }
+	3.	Multilingual support
+	•	POST /v1/i18n/translate
+	•	Input: { text, sourceLang, targetLang }
+	•	Output: { translated, qualityEstimate }
+
+Each task must call a provider-agnostic interface (below) so models can be swapped without rewriting flows.
+
+2) Provider Wrappers (OpenAI, Anthropic, Hugging Face)
+
+Create /packages/ai-providers with:
+	•	LLMProvider.ts (interface):
+
+export type LLMModel = 'openai:gpt-4o-mini'|'openai:gpt-4.1'|'anthropic:claude-3.5-sonnet'|'hf:mixtral-8x7b-instruct';
+export interface GenTextArgs { prompt: string; system?: string; temperature?: number; maxTokens?: number; json?: boolean; }
+export interface Provider {
+  name: 'openai'|'anthropic'|'hf';
+  supportsJson: boolean;
+  generateText(args: GenTextArgs): Promise<{ text: string; tokensIn: number; tokensOut: number; raw?: any }>;
+  moderate?(text: string): Promise<{ flagged: boolean; categories: string[] }>;
+  translate?(text: string, from: string, to: string): Promise<{ translated: string; quality: number }>;
+  estimateCost(tokensIn: number, tokensOut: number, model: LLMModel): number;
+  privacyNotes: string[]; // e.g., data retention, regional hosting, SOC2/HIPAA claims
+}
+
+
+	•	Implementations:
+	•	OpenAIProvider.ts
+	•	AnthropicProvider.ts
+	•	HFProvider.ts (use Inference API compatible text-gen + translation model)
+	•	Model registry: registry.ts maps LLMModel → provider + per-million token cost (prompt/completion), and any request headers needed.
+	•	Cost calc in each provider using current, easily editable constants.
+	•	Privacy metadata per provider: retention policy (default), data use for training (on/off), available regional endpoints, HIPAA/SOC2 claims (as notes—no legal assertions).
+
+3) Model-Swap API Wrapper
+
+Create /apps/api/src/services/aiRouter.ts:
+	•	Chooses a model per task via config rules:
+	•	default: accuracy-weighted for intent parsing
+	•	cost-weighted for nudges
+	•	translation-specialized for i18n
+	•	Accepts query override ?model= to force a model during experiments.
+	•	Emits a normalized response & logs:
+	•	events (task_name, model, latency_ms, tokens_in, tokens_out, user_id/session_id)
+	•	cost_usage (date, provider, model, cost_usd, tokens_in, tokens_out)
+
+4) API Comparisons (cost, accuracy, privacy)
+
+Create a CLI + dashboard:
+	•	CLI: pnpm compare:providers --task coverage_intent --prompt "./prompts/intent/*.txt" --runs 50 --models openai:gpt-4o-mini,anthropic:claude-3.5-sonnet,hf:mixtral-8x7b-instruct
+	•	Runs batch prompts, records latency, token counts, cost estimate, and accuracy proxy:
+	•	For intent parsing, use lightweight heuristics + optional human labels in /eval/labels.json.
+	•	Web dashboard page /admin/providers:
+	•	Shows radar/score of cost vs. accuracy vs. privacy “fit” by task.
+	•	Privacy “fit” uses the provider privacyNotes + our PRIVACY_MODE.
+
+5) Daily Usage/Cost Monitoring & Alerts
+	•	Cron (Replit scheduled task) runs daily:
+	•	Aggregates cost_usage by provider/model/day.
+	•	Compares to 7-day moving average; if spike > X%, send alert to ALERT_SLACK_WEBHOOK (or email fallback).
+	•	/admin/usage page:
+	•	Sparkline per model
+	•	Top prompts by spend (hashed content), token heatmap
+	•	Add per-request server-side rate limiting + auto backoff to cheaper model on surge (configurable).
+
+6) Privacy & Compliance Mapping for Sensitive Flows
+
+Implement a tiny privacy layer:
+	•	privacy.ts middleware:
+	•	Classifies fields as PII, Financial, Health, ImmigrationSensitive.
+	•	If PRIVACY_MODE=strict, strip/minimize before provider calls (mask names, addresses, IDs; replace with placeholders).
+	•	Maintain privacy_logs table (timestamp, fields_masked, provider, flow, session_id).
+	•	Block sending raw Financial or ImmigrationSensitive to providers that lack required notes (e.g., data retention off) and route to an allowed model or local heuristic.
+	•	Provide a Data Subject Request stub: /privacy/dsr/export returns all user-related logs for audit.
+
+7) Web (Next.js) Onboarding Flows
+	•	Minimal UI with 3 steps:
+	1.	Persona bootstrap (demographics, language, immigration status optional)
+	2.	Coverage intent free-text (multilingual)
+	3.	Nudge suggestions & CTA
+	•	Feature flags (from API) to A/B test a step with a different model:
+	•	GET /v1/experiments/assignment?user=... returns control/variant and the model override.
+	•	Store results in ab_tests (assignment, completion, dwell time).
+	•	/admin/experiments page:
+	•	Compute uplift, p-value (basic chi-square) for completion rate.
+
+8) Testing Plan Scaffold (so we can “swap a model this week”)
+	•	Add pnpm test:e2e with Playwright tests for:
+	•	baseline (default model)
+	•	variant (forced cheaper or more accurate model)
+	•	In README, document how to swap (env var or query param), and how to judge success:
+	•	Target metric: onboarding step completion rate
+	•	Guardrails: latency < 1.2× baseline, cost per completed user ≤ baseline
+
+9) Deliverables
+	•	✅ Full code
+	•	✅ Postman/Bruno collection
+	•	✅ Seed data for /eval/labels.json (10 example intents, with bilingual cases)
+	•	✅ README including:
+	•	How we compute cost per model
+	•	How to run provider comparisons
+	•	How to enable strict privacy
+	•	How alerts trigger
+	•	A short section: “Trade-offs: Cost vs Accuracy vs Privacy—how to pick per step”
+
+10) After build, answer these in README bottom:
+	1.	Biggest trade-off in this starter and how config addresses it.
+	2.	Which onboarding step to swap models first (recommendation + why).
+	3.	How to test improvement (exact commands, metrics, success thresholds).
+	4.	Privacy risks unique to immigrant users (e.g., names/IDs, cross-border data transfer, language/mistranslation risks) and how our masking + routing + logging addresses them.
+
+Finally, run everything, print the local URLs, and seed with 2 personas (EN + AR) for quick demo.
+
+END PROMPT
+
+⸻
+
+Want me to tailor this for a Python/FastAPI stack instead, or keep Node+TS?
