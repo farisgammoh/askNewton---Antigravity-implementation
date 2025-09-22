@@ -65,7 +65,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/leads", async (req, res) => {
     // Require admin API key for security
     const adminKey = req.headers['x-admin-key'];
-    if (!adminKey || adminKey !== process.env.ADMIN_API_KEY) {
+    const expectedKey = process.env.ADMIN_API_KEY;
+    
+    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
+    
+    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
       return res.status(401).json({ error: "Unauthorized - Admin access required" });
     }
 
@@ -83,7 +87,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/hubspot/test", async (req, res) => {
     // Require admin API key for security
     const adminKey = req.headers['x-admin-key'];
-    if (!adminKey || adminKey !== process.env.ADMIN_API_KEY) {
+    const expectedKey = process.env.ADMIN_API_KEY;
+    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
+    
+    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
       return res.status(401).json({ error: "Unauthorized - Admin access required" });
     }
 
