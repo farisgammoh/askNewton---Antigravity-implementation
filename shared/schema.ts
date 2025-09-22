@@ -258,3 +258,40 @@ export const personaSelectionSchema = z.object({
 export type InsertPersonaSelection = z.infer<typeof insertPersonaSelectionSchema>;
 export type PersonaSelection = typeof personaSelections.$inferSelect;
 export type PersonaSelectionFormData = z.infer<typeof personaSelectionSchema>;
+
+// Google Ads lead schema - flexible format for lead form submissions
+export const googleAdsLeadSchema = z.object({
+  // Required fields commonly provided by Google Ads
+  email: z.string().email("Please enter a valid email address"),
+  
+  // Optional fields that may be provided
+  name: z.string().optional(),
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  phone_number: z.string().optional(),
+  phone: z.string().optional(),
+  zip_code: z.string().optional(),
+  postal_code: z.string().optional(),
+  
+  // Custom questions/fields
+  persona_type: z.enum(['nomad', 'traveler', 'student']).optional(),
+  stay_length: z.string().optional(),
+  arrival_date: z.string().optional(),
+  current_coverage: z.string().optional(),
+  notes: z.string().optional(),
+  message: z.string().optional(),
+  
+  // Flexible field for any additional Google Ads data
+  gclid: z.string().optional(), // Google Click Identifier
+  campaign_id: z.string().optional(),
+  ad_group_id: z.string().optional(),
+  keyword: z.string().optional()
+}).refine(
+  (data) => data.name || (data.first_name && data.last_name),
+  {
+    message: "Either 'name' or both 'first_name' and 'last_name' must be provided",
+    path: ["name"]
+  }
+);
+
+export type GoogleAdsLeadData = z.infer<typeof googleAdsLeadSchema>;
