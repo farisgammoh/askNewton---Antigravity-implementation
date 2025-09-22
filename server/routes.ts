@@ -9,7 +9,6 @@ import { askNewtonAI } from "./services/openai";
 import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, personas, recommendations } from "@shared/schema";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -802,15 +801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Privacy policy routes (both /privacy and /api/privacy for flexibility)
   const servePrivacyPolicy = (req: any, res: any) => {
-    try {
-      const privacyPath = path.join(process.cwd(), 'public', 'asknewton_privacy.html');
-      const htmlContent = fs.readFileSync(privacyPath, 'utf-8');
-      res.setHeader('Content-Type', 'text/html');
-      res.send(htmlContent);
-    } catch (error) {
-      console.error('Privacy policy file error:', error);
-      res.status(404).send('Privacy policy not found');
-    }
+    res.sendFile(process.cwd() + "/public/asknewton_privacy.html");
   };
 
   app.get("/api/privacy", servePrivacyPolicy);
@@ -818,15 +809,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Terms of service routes (both /terms and /api/terms for flexibility)
   const serveTermsOfService = (req: any, res: any) => {
-    try {
-      const termsPath = path.join(process.cwd(), 'public', 'asknewton_terms.html');
-      const htmlContent = fs.readFileSync(termsPath, 'utf-8');
-      res.setHeader('Content-Type', 'text/html');
-      res.send(htmlContent);
-    } catch (error) {
-      console.error('Terms of service file error:', error);
-      res.status(404).send('Terms of service not found');
-    }
+    res.sendFile(process.cwd() + "/public/asknewton_terms.html");
   };
 
   app.get("/api/terms", serveTermsOfService);
