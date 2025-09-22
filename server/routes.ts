@@ -7,6 +7,9 @@ import { sendLeadNotification, type LeadNotificationData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
 import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, personas, recommendations } from "@shared/schema";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -796,6 +799,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
   });
+
+  // Privacy policy routes (both /privacy and /api/privacy for flexibility)
+  const servePrivacyPolicy = (req: any, res: any) => {
+    try {
+      const privacyPath = path.join(process.cwd(), 'public', 'asknewton_privacy.html');
+      const htmlContent = fs.readFileSync(privacyPath, 'utf-8');
+      res.setHeader('Content-Type', 'text/html');
+      res.send(htmlContent);
+    } catch (error) {
+      console.error('Privacy policy file error:', error);
+      res.status(404).send('Privacy policy not found');
+    }
+  };
+
+  app.get("/api/privacy", servePrivacyPolicy);
+  app.get("/privacy", servePrivacyPolicy);
 
   const httpServer = createServer(app);
   return httpServer;
