@@ -233,10 +233,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if email already has a selection
       const existingSelection = await storageInstance.getPersonaSelectionByEmail(parsed.email);
       if (existingSelection) {
+        const selectedPersona = await storageInstance.getPersona(existingSelection.personaId);
+        const personaName = selectedPersona?.name || "a persona";
         return res.status(400).json({ 
           error: "Email already registered",
-          message: "You can only select one persona per email address. You've already selected: " + 
-                   (await storageInstance.getPersona(existingSelection.personaId))?.name || "a persona"
+          message: `You can only select one persona per email address. You've already selected: ${personaName}`
         });
       }
 
