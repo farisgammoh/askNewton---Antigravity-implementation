@@ -10,6 +10,7 @@ import Nomad from "@/pages/nomad";
 import Traveler from "@/pages/traveler";
 import Student from "@/pages/student";
 import Start from "@/pages/start";
+import SimpleStart from "@/pages/simple-start";
 import Thanks from "@/pages/thanks";
 import Dashboard from "@/pages/dashboard";
 import PersonasPage from "@/pages/personas";
@@ -31,6 +32,7 @@ function Router() {
           <Route path="/traveler" component={Traveler} />
           <Route path="/student" component={Student} />
           <Route path="/start" component={Start} />
+          <Route path="/simple-start" component={SimpleStart} />
           <Route path="/thanks" component={Thanks} />
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/personas" component={PersonasPage} />

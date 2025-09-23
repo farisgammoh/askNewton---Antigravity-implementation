@@ -6,7 +6,7 @@ import { z } from "zod";
 import { sendLeadNotification, type LeadNotificationData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
-import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, personas, recommendations } from "@shared/schema";
+import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, simpleOnboardingSchema } from "@shared/schema";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -42,7 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const hubspotResult = await hubSpotService.createContact(lead);
         if (hubspotResult.success) {
-          console.log(`📊 Lead sent to HubSpot: ${lead.email}`);
+          console.log(`📊 Lead sent to HubSpot: ${lead.email.substring(0,3)}***@${lead.email.split('@')[1]}`);
         } else {
           console.warn(`⚠️ HubSpot integration failed: ${hubspotResult.error}`);
         }
@@ -61,6 +61,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         console.error('Lead creation error:', error);
         res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  });
+
+  // Simple conversational onboarding endpoint
+  app.post("/api/simple-lead", async (req, res) => {
+    try {
+      const parsed = simpleOnboardingSchema.parse(req.body);
+      
+      // Forward to webhook (Zapier) immediately - this is the main purpose
+      const webhookUrl = process.env.WEBHOOK_URL;
+      if (webhookUrl) {
+        try {
+          // Ensure webhook URL is HTTPS for security
+          if (!webhookUrl.startsWith('https://')) {
+            console.error('Webhook URL must be HTTPS for security');
+          } else {
+            const response = await fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...parsed,
+                source: 'conversational_onboarding',
+                createdAt: new Date().toISOString()
+              }),
+              signal: AbortSignal.timeout(10000) // 10 second timeout
+            });
+
+            if (!response.ok) {
+              throw new Error(`Webhook failed with status: ${response.status}`);
+            }
+            
+            console.log('📡 Conversational lead forwarded to webhook successfully');
+          }
+        } catch (error) {
+          console.error('Webhook error:', error);
+          // Don't fail the request if webhook fails
+        }
+      }
+
+      res.status(201).json({ 
+        success: true, 
+        message: "✅ Thanks! We've got your info and will follow up with the best options for you."
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ 
+          error: "Validation failed", 
+          details: error.errors 
+        });
+      } else {
+        console.error('Simple lead creation error:', error);
+        res.status(500).json({ error: "⚠️ Something went wrong sending your info. Please try again." });
       }
     }
   });
@@ -451,7 +504,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Save recommendation to database
       const savedRecommendation = await storageInstance.createRecommendation(recommendationValidation.data);
       
-      console.log(`✅ Generated recommendation for lead ${lead.email} using persona ${persona.name}`);
+      console.log(`✅ Generated recommendation for lead ${lead.email.substring(0,3)}***@${lead.email.split('@')[1]} using persona ${persona.name}`);
       
       res.json({ 
         success: true, 
@@ -764,7 +817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const hubspotResult = await hubSpotService.createContact(lead);
         if (hubspotResult.success) {
-          console.log(`📊 Google Ads lead sent to HubSpot: ${lead.email}`);
+          console.log(`📊 Google Ads lead sent to HubSpot: ${lead.email.substring(0,3)}***@${lead.email.split('@')[1]}`);
         } else {
           console.warn(`⚠️ Google Ads HubSpot integration failed: ${hubspotResult.error}`);
         }
@@ -773,7 +826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Don't fail the request if HubSpot fails
       }
 
-      console.log(`✅ Google Ads lead processed successfully: ${lead.email}`);
+      console.log(`✅ Google Ads lead processed successfully: ${lead.email.substring(0,3)}***@${lead.email.split('@')[1]}`);
       
       res.status(200).json({ 
         success: true, 

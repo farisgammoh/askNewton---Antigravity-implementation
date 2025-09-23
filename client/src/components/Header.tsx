@@ -42,11 +42,18 @@ export default function Header() {
       >
         Student
       </Link>
-      <Link href="/start" onClick={onLinkClick}>
-        <Button className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="button-get-options">
-          Get my options
-        </Button>
-      </Link>
+      <div className={`${mobile ? 'flex flex-col space-y-2' : 'flex space-x-2'}`}>
+        <Link href="/simple-start" onClick={onLinkClick}>
+          <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground" data-testid="button-simple-start">
+            💬 Quick Chat
+          </Button>
+        </Link>
+        <Link href="/start" onClick={onLinkClick}>
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" data-testid="button-get-options">
+            📋 Full Form
+          </Button>
+        </Link>
+      </div>
     </nav>
   );
 

@@ -295,3 +295,16 @@ export const googleAdsLeadSchema = z.object({
 );
 
 export type GoogleAdsLeadData = z.infer<typeof googleAdsLeadSchema>;
+
+// Simple conversational onboarding schema
+export const simpleOnboardingSchema = z.object({
+  language: z.enum(['English', 'Arabic', 'Spanish'], {
+    errorMap: () => ({ message: "Please select a language preference" })
+  }),
+  health_info: z.string().min(1, "Please provide health information"),
+  lifestyle: z.string().min(1, "Please provide lifestyle information"), 
+  provider: z.string().min(1, "Please provide provider preference"),
+  email: z.string().email("Please enter a valid email address")
+});
+
+export type SimpleOnboardingData = z.infer<typeof simpleOnboardingSchema>;
