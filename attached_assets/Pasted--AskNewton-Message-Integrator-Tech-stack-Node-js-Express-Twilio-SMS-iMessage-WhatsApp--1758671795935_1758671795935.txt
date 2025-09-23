@@ -1,0 +1,87 @@
+// AskNewton Message Integrator
+// Tech stack: Node.js + Express + Twilio (SMS/iMessage & WhatsApp) + OpenAI + Nodemailer + Zapier Webhook
+
+// STEP 1: SETUP
+// Install required packages via Replit shell or package.json:
+// npm install express body-parser twilio axios openai nodemailer dotenv
+
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+const { OpenAI } = require("openai");
+const nodemailer = require('nodemailer');
+
+const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+// CONFIG
+const PORT = process.env.PORT || 3000;
+const ZAPIER_WEBHOOK = process.env.ZAPIER_WEBHOOK;
+const EMAIL_TO = "faris@asknewton.com";
+
+// TWILIO SETUP
+const twilio = require('twilio');
+const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
+
+// OPENAI
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// EMAIL SETUP
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+// === CORE LOGIC ===
+
+// iMessage/SMS + WhatsApp webhook receiver
+app.post('/message', async (req, res) => {
+  const { From, Body, To } = req.body;
+  const isWhatsApp = From.startsWith("whatsapp:");
+
+  // 1. Send to Zapier
+  await axios.post(ZAPIER_WEBHOOK, {
+    channel: isWhatsApp ? "WhatsApp" : "iMessage",
+    from: From,
+    to: To,
+    message: Body
+  });
+
+  // 2. Use OpenAI for smart replies (WhatsApp only)
+  let followUp = "Thanks for reaching out. Could you provide a few more details?";
+  if (isWhatsApp && !Body.toLowerCase().includes("insurance")) {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: Body }]
+    });
+    followUp = completion.choices[0].message.content.trim();
+  }
+
+  // 3. Respond via Twilio
+  await client.messages.create({
+    body: followUp,
+    from: To,
+    to: From
+  });
+
+  // 4. Email log
+  const emailBody = `New message received from ${From} on ${isWhatsApp ? "WhatsApp" : "iMessage"}:\n\n${Body}\n\nResponse sent:\n${followUp}`;
+  await transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to: EMAIL_TO,
+    subject: `AskNewton Chat Log: ${From}`,
+    text: emailBody
+  });
+
+  res.sendStatus(200);
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`AskNewton listener running on port ${PORT}`);
+});

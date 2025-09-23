@@ -9,6 +9,8 @@ import { askNewtonAI } from "./services/openai";
 import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, simpleOnboardingSchema } from "@shared/schema";
 import path from "path";
 import { fileURLToPath } from "url";
+import twilio from "twilio";
+import nodemailer from "nodemailer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -867,6 +869,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/terms", serveTermsOfService);
   app.get("/terms", serveTermsOfService);
+
+  // Initialize Twilio and email services for messaging
+  const twilioClient = process.env.TWILIO_SID && process.env.TWILIO_AUTH_TOKEN ? 
+    twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN) : null;
+
+  const emailTransporter = process.env.EMAIL_USER && process.env.EMAIL_PASS ? 
+    nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    }) : null;
+
+  // AskNewton Message Integrator - Webhook endpoint for Twilio messages
+  app.post("/api/message", async (req, res) => {
+    try {
+      const { From, Body, To } = req.body;
+      
+      if (!From || !Body || !To) {
+        return res.status(400).json({ error: "Missing required fields: From, Body, To" });
+      }
+
+      const isWhatsApp = From.startsWith("whatsapp:");
+      const channel = isWhatsApp ? "WhatsApp" : "SMS";
+      
+      console.log(`📱 Received ${channel} message from ${From.substring(0,3)}***`);
+
+      // 1. Forward to Zapier webhook if configured
+      const webhookUrl = process.env.WEBHOOK_URL;
+      if (webhookUrl) {
+        try {
+          await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              channel,
+              from: From,
+              to: To,
+              message: Body,
+              timestamp: new Date().toISOString()
+            })
+          });
+          console.log(`📡 Message forwarded to webhook successfully`);
+        } catch (error) {
+          console.error('Webhook forwarding error:', error);
+        }
+      }
+
+      // 2. Generate smart response using OpenAI (WhatsApp only)
+      let followUp = "Thanks for reaching out! We'll help you find the best health insurance options for California. What specific questions do you have?";
+      
+      if (isWhatsApp && !Body.toLowerCase().includes("stop") && !Body.toLowerCase().includes("unsubscribe")) {
+        try {
+          const aiService = askNewtonAI;
+          if (aiService) {
+            // Use OpenAI to generate contextual response for health insurance queries
+            const smartResponse = await aiService.generateChatResponse(Body, "health_insurance_guidance");
+            if (smartResponse) {
+              followUp = smartResponse;
+            }
+          }
+        } catch (error) {
+          console.error('OpenAI response generation error:', error);
+          // Fallback to default message
+        }
+      }
+
+      // 3. Send response via Twilio
+      if (twilioClient) {
+        try {
+          await twilioClient.messages.create({
+            body: followUp,
+            from: To,
+            to: From
+          });
+          console.log(`✅ Response sent via ${channel}`);
+        } catch (error) {
+          console.error('Twilio send error:', error);
+        }
+      }
+
+      // 4. Email log to team
+      if (emailTransporter) {
+        try {
+          const emailBody = `New ${channel} message received:\n\nFrom: ${From}\nMessage: ${Body}\n\nResponse sent:\n${followUp}\n\nTimestamp: ${new Date().toISOString()}`;
+          
+          await emailTransporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: "faris@asknewton.com",
+            subject: `AskNewton ${channel} Chat Log`,
+            text: emailBody
+          });
+          console.log(`📧 Email log sent successfully`);
+        } catch (error) {
+          console.error('Email log error:', error);
+        }
+      }
+
+      res.status(200).json({ success: true, message: "Message processed successfully" });
+      
+    } catch (error) {
+      console.error('Message processing error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
