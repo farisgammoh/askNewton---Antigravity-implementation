@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { Linkedin, Facebook } from "lucide-react";
 
 export default function Footer() {
   return (
@@ -65,6 +66,30 @@ export default function Footer() {
                 data-testid="footer-calendly"
               >
                 Book a call
+              </a>
+            </div>
+            
+            <h3 className="font-semibold text-foreground mb-3 mt-6">Follow Us</h3>
+            <div className="flex space-x-4">
+              <a 
+                href="https://www.linkedin.com/company/108558966/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="footer-linkedin"
+                aria-label="Follow us on LinkedIn"
+              >
+                <Linkedin className="w-5 h-5" />
+              </a>
+              <a 
+                href="https://www.facebook.com/profile.php?id=61581110065448" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="footer-facebook"
+                aria-label="Follow us on Facebook"
+              >
+                <Facebook className="w-5 h-5" />
               </a>
             </div>
           </div>
