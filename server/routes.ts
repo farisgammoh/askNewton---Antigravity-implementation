@@ -12,6 +12,7 @@ import { fileURLToPath } from "url";
 import twilio from "twilio";
 import nodemailer from "nodemailer";
 import { createIsaacAgent, createNewtonAgent, type NewtonVoiceAgent, type VoicePersona, NEWTON_VOICES } from "./services/elevenlabs";
+import bodyParser from "body-parser";
 
 // Helper function to get persona descriptions
 function getPersonaDescription(persona: VoicePersona): string {
@@ -23,7 +24,117 @@ function getPersonaDescription(persona: VoicePersona): string {
   return descriptions[persona];
 }
 
+// ElevenLabs webhook authentication
+function requireElevenLabsAuth(req: any, res: any, next: any) {
+  const token = (req.headers.authorization || "").replace("Bearer ", "");
+  const backendToken = process.env.BACKEND_BEARER_TOKEN;
+  
+  if (!backendToken || token !== backendToken) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+// HubSpot contact management
+async function hsUpsertContact({ email, phone, firstname, lastname, lang }: {
+  email?: string; 
+  phone?: string; 
+  firstname?: string; 
+  lastname?: string; 
+  lang?: string;
+}) {
+  const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!hubspotToken) return { skipped: "no HUBSPOT token" };
+
+  const url = "https://api.hubapi.com/crm/v3/objects/contacts";
+  
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${hubspotToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        properties: {
+          email,
+          phone,
+          firstname,
+          lastname,
+          hs_language: lang || "en"
+        }
+      })
+    });
+    const data = await res.json();
+    return { status: res.status, data };
+  } catch (error) {
+    console.error('HubSpot contact upsert error:', error);
+    return { error: 'Failed to upsert contact' };
+  }
+}
+
+// HubSpot call logging
+async function hsLogCall({ contactId, direction = "OUTBOUND", status = "COMPLETED", durationSeconds = 0, summary = "" }: {
+  contactId?: string;
+  direction?: string;
+  status?: string;
+  durationSeconds?: number;
+  summary?: string;
+}) {
+  const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!hubspotToken || !contactId) return { skipped: "missing token or contactId" };
+
+  const url = "https://api.hubapi.com/crm/v3/objects/calls";
+  
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${hubspotToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        properties: {
+          hs_call_body: summary,
+          hs_call_callee_object_type: "CONTACT",
+          hs_call_direction: direction,
+          hs_call_disposition: status,
+          hs_call_duration: durationSeconds * 1000, // ms
+          hs_timestamp: new Date().toISOString()
+        },
+        associations: [
+          { to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 3 }] }
+        ]
+      })
+    });
+    const data = await res.json();
+    return { status: res.status, data };
+  } catch (error) {
+    console.error('HubSpot call logging error:', error);
+    return { error: 'Failed to log call' };
+  }
+}
+
+// Zapier webhook forwarding
+async function zapMirror(eventName: string, payload: any) {
+  const zapierUrl = process.env.ZAPIER_HOOK_URL;
+  if (!zapierUrl) return;
+  
+  try {
+    await fetch(zapierUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: eventName, payload })
+    });
+    console.log(`📡 Event ${eventName} forwarded to Zapier`);
+  } catch (e) {
+    console.error('Zapier forward error:', e);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Add body parser middleware for webhook handling
+  app.use(bodyParser.json());
   // Lead submission endpoint
   app.post("/api/lead", async (req, res) => {
     try {
@@ -1260,6 +1371,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Isaac script generation error:', error);
       res.status(500).json({ error: "Failed to generate script" });
+    }
+  });
+
+  // ====== ElevenLabs Webhook Endpoints ======
+  // Configure these in ElevenLabs Agents → Settings/Webhooks
+  // Use Authorization: Bearer <BACKEND_BEARER_TOKEN>
+
+  app.post("/webhooks/eleven/conversation-start", requireElevenLabsAuth, async (req, res) => {
+    try {
+      const p = req.body || {};
+      await zapMirror("conversation_start", p);
+
+      // Extract contact fields (null-safe)
+      const email = p?.user?.email || p?.customer?.email || undefined;
+      const phone = p?.user?.phone || p?.customer?.phone || p?.caller?.phone || undefined;
+      const firstname = p?.user?.first_name || p?.customer?.first_name || p?.caller?.name || "Lead";
+      const lastname = p?.user?.last_name || p?.customer?.last_name || "";
+
+      console.log(`🎙️ Conversation started with ${firstname} ${lastname} (${email || phone || 'unknown'})`);
+
+      const upsert = await hsUpsertContact({ 
+        email, 
+        phone, 
+        firstname, 
+        lastname, 
+        lang: p?.language || "en" 
+      });
+
+      res.json({ ok: true, hubspot: upsert });
+    } catch (error) {
+      console.error('Conversation start webhook error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/webhooks/eleven/conversation-end", requireElevenLabsAuth, async (req, res) => {
+    try {
+      const p = req.body || {};
+      await zapMirror("conversation_end", p);
+
+      const contactId = p?.integrations?.hubspot?.contactId || p?.contactId || p?.user?.hubspot_id;
+      const secs = Number(p?.metrics?.duration_seconds || p?.duration || 0);
+      const summary = p?.summary || p?.notes || "Call ended";
+      const direction = p?.direction?.toUpperCase?.() || "OUTBOUND";
+
+      console.log(`📞 Conversation ended: ${secs}s duration, ${direction}`);
+
+      const logged = await hsLogCall({
+        contactId,
+        durationSeconds: secs,
+        summary,
+        status: "COMPLETED",
+        direction
+      });
+
+      res.json({ ok: true, hubspot: logged });
+    } catch (error) {
+      console.error('Conversation end webhook error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/webhooks/eleven/voicemail", requireElevenLabsAuth, async (req, res) => {
+    try {
+      const p = req.body || {};
+      await zapMirror("voicemail_detected", p);
+      
+      console.log(`📧 Voicemail detected`);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Voicemail webhook error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/webhooks/eleven/transfer", requireElevenLabsAuth, async (req, res) => {
+    try {
+      const p = req.body || {};
+      await zapMirror("transfer_to_human", p);
+      
+      console.log(`🤝 Transfer to human requested`);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Transfer webhook error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ====== Manual CRM Management Endpoints ======
+  
+  app.get("/api/lead", requireElevenLabsAuth, async (req, res) => {
+    try {
+      // Example stub: you'd fetch from your CRM/Data store
+      res.json({ found: false, message: "Lead lookup not implemented" });
+    } catch (error) {
+      console.error('Lead lookup error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/log-call", requireElevenLabsAuth, async (req, res) => {
+    try {
+      const { contactId, summary, outcome, durationSeconds = 0, direction = "OUTBOUND" } = req.body || {};
+      
+      if (!contactId) {
+        return res.status(400).json({ error: "contactId is required" });
+      }
+
+      const logged = await hsLogCall({ 
+        contactId, 
+        summary, 
+        durationSeconds, 
+        direction, 
+        status: outcome || "COMPLETED" 
+      });
+      
+      await zapMirror("log_call_manual", { contactId, summary, outcome, durationSeconds, direction });
+      
+      console.log(`📝 Manual call logged for contact ${contactId}`);
+      res.json({ ok: true, hubspot: logged });
+    } catch (error) {
+      console.error('Manual call log error:', error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 

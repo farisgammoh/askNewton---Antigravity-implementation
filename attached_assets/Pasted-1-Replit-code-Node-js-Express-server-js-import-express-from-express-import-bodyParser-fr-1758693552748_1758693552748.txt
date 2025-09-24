@@ -1,0 +1,223 @@
+1) Replit code (Node.js / Express)
+
+// server.js
+import express from "express";
+import bodyParser from "body-parser";
+import fetch from "node-fetch";
+
+const app = express();
+app.use(bodyParser.json());
+
+// ====== ENV ======
+const {
+  PORT = 3000,
+  HUBSPOT_ACCESS_TOKEN,      // pat-na1-... (Private App)
+  ZAPIER_HOOK_URL,           // https://hooks.zapier.com/hooks/...
+  BACKEND_BEARER_TOKEN       // shared secret for ElevenLabs -> Replit
+} = process.env;
+
+// Simple bearer auth for incoming webhooks
+function requireAuth(req, res, next) {
+  const token = (req.headers.authorization || "").replace("Bearer ", "");
+  if (!BACKEND_BEARER_TOKEN || token !== BACKEND_BEARER_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+// ---------- Utilities ----------
+async function hsUpsertContact({ email, phone, firstname, lastname, lang }) {
+  if (!HUBSPOT_ACCESS_TOKEN) return { skipped: "no HUBSPOT token" };
+
+  // Try to find by email first; otherwise create.
+  // Minimal, resilient pattern: use Create w/ "email" as unique property (HubSpot dedupes).
+  const url = "https://api.hubapi.com/crm/v3/objects/contacts";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      properties: {
+        email,
+        phone,
+        firstname,
+        lastname,
+        hs_language: lang || "en"
+      }
+    })
+  });
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+async function hsLogCall({ contactId, direction = "OUTBOUND", status = "COMPLETED", durationSeconds = 0, summary = "" }) {
+  if (!HUBSPOT_ACCESS_TOKEN || !contactId) return { skipped: "missing token or contactId" };
+
+  const url = "https://api.hubapi.com/crm/v3/objects/calls";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${HUBSPOT_ACCESS_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      properties: {
+        hs_call_body: summary,
+        hs_call_callee_object_type: "CONTACT",
+        hs_call_direction: direction,       // INBOUND | OUTBOUND
+        hs_call_disposition: status,        // COMPLETED, NO_ANSWER, BUSY, etc.
+        hs_call_duration: durationSeconds * 1000, // ms
+        hs_timestamp: new Date().toISOString()
+      },
+      associations: [
+        { to: { id: contactId }, types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 3 }] }
+      ]
+    })
+  });
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+async function zapMirror(eventName, payload) {
+  if (!ZAPIER_HOOK_URL) return;
+  try {
+    await fetch(ZAPIER_HOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: eventName, payload })
+    });
+  } catch (e) {}
+}
+
+// ====== ElevenLabs Webhooks ======
+// Configure these in ElevenLabs Agents → Settings/Webhooks
+// Use Authorization: Bearer <BACKEND_BEARER_TOKEN>
+
+app.post("/webhooks/eleven/conversation-start", requireAuth, async (req, res) => {
+  const p = req.body || {};
+  await zapMirror("conversation_start", p);
+
+  // Basic contact fields (null-safe)
+  const email = p?.user?.email || p?.customer?.email || undefined;
+  const phone = p?.user?.phone || p?.customer?.phone || p?.caller?.phone || undefined;
+  const firstname = p?.user?.first_name || p?.customer?.first_name || p?.caller?.name || "Lead";
+  const lastname = p?.user?.last_name || p?.customer?.last_name || "";
+
+  const upsert = await hsUpsertContact({ email, phone, firstname, lastname, lang: p?.language || "en" });
+
+  res.json({ ok: true, hubspot: upsert });
+});
+
+app.post("/webhooks/eleven/conversation-end", requireAuth, async (req, res) => {
+  const p = req.body || {};
+  await zapMirror("conversation_end", p);
+
+  const contactId = p?.integrations?.hubspot?.contactId || p?.contactId || p?.user?.hubspot_id; // try a few guesses
+  const secs = Number(p?.metrics?.duration_seconds || p?.duration || 0);
+  const summary = p?.summary || p?.notes || "Call ended";
+
+  const logged = await hsLogCall({
+    contactId,
+    durationSeconds: secs,
+    summary,
+    status: "COMPLETED",
+    direction: p?.direction?.toUpperCase?.() || "OUTBOUND"
+  });
+
+  res.json({ ok: true, hubspot: logged });
+});
+
+app.post("/webhooks/eleven/voicemail", requireAuth, async (req, res) => {
+  const p = req.body || {};
+  await zapMirror("voicemail_detected", p);
+  res.json({ ok: true });
+});
+
+app.post("/webhooks/eleven/transfer", requireAuth, async (req, res) => {
+  const p = req.body || {};
+  await zapMirror("transfer_to_human", p);
+  res.json({ ok: true });
+});
+
+// ====== Optional MCP-style endpoints your agents can call ======
+app.get("/lead", requireAuth, async (req, res) => {
+  // Example stub: you’d fetch from your CRM/Data store
+  res.json({ found: false });
+});
+
+app.post("/log-call", requireAuth, async (req, res) => {
+  const { contactId, summary, outcome, durationSeconds = 0, direction = "OUTBOUND" } = req.body || {};
+  const logged = await hsLogCall({ contactId, summary, durationSeconds, direction, status: outcome || "COMPLETED" });
+  await zapMirror("log_call_manual", { contactId, summary, outcome, durationSeconds, direction });
+  res.json({ ok: true, hubspot: logged });
+});
+
+app.listen(PORT, () => console.log(`AskNewton hub running on :${PORT}`));
+package.json
+
+{
+  "name": "asknewton-elevenlabs-bridge",
+  "type": "module",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2"
+  },
+  "scripts": { "start": "node server.js" }
+}
+
+2) Replit Secrets (add these)
+* BACKEND_BEARER_TOKEN → a long random string (used in ElevenLabs webhook Authorization header)
+* HUBSPOT_ACCESS_TOKEN → your HubSpot Private App token (scopes: crm.objects.contacts.write, crm.objects.contacts.read, crm.objects.calls.write)
+* ZAPIER_HOOK_URL → your Zapier Catch Hook (optional but useful)
+
+3) ElevenLabs setup
+In Agents Platform → Settings → Webhooks (or agent-level webhooks if that UI is what you have):
+Add four webhooks pointing to your Replit URL (e.g., https://<your-repl>.replit.app):
+* Conversation start → POST /webhooks/eleven/conversation-start
+* Conversation end → POST /webhooks/eleven/conversation-end
+* Voicemail detected → POST /webhooks/eleven/voicemail
+* Transfer to human → POST /webhooks/eleven/transfer
+Headers: Authorization: Bearer <BACKEND_BEARER_TOKEN> Content-Type: application/json
+(If ElevenLabs lets you include the agent name/ID in a query param, do it so you can route per-agent if needed.)
+
+4) HubSpot Private App (quick)
+* HubSpot → Settings → Integrations → Private Apps → New
+* Scopes (minimum):
+    * crm.objects.contacts.read
+    * crm.objects.contacts.write
+    * crm.objects.calls.write
+* Copy your token → store as HUBSPOT_ACCESS_TOKEN in Replit.
+
+5) Zapier (optional but recommended)
+* Create a Catch Hook in Webhooks by Zapier.
+* Copy the hook URL → ZAPIER_HOOK_URL.
+* In Zapier, parse payload.* to:
+    * append a row to Google Sheets,
+    * notify Slack,
+    * send a templated email,
+    * create a HubSpot task, etc.
+
+6) ElevenLabs Agent notes
+* In each agent’s System Prompt, add:    When a call starts or ends, the platform sends webhooks to my backend.
+* Keep summaries concise; they are logged to the CRM.
+* If a user agrees to a demo, clearly confirm and proceed with transfer.
+*   
+* Keep Token Limit (Sales): Isaac 200, Mila 200, Faris 250.
+* Temperature: Creative, Reasoning Effort: Medium.
+
+7) Quick tests
+Auth test
+
+curl -X POST "https://<your-repl>.replit.app/webhooks/eleven/conversation-start" \
+  -H "Authorization: Bearer <BACKEND_BEARER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"user":{"email":"lead@example.com","phone":"+14155551234","first_name":"Ana"},"language":"es"}'
+Manual log to HubSpot
+
+curl -X POST "https://<your-repl>.replit.app/log-call" \
+  -H "Authorization: Bearer <BACKEND_BEARER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"contactId":"<HUBSPOT_CONTACT_ID>","summary":"Warm lead, wants demo","outcome":"COMPLETED","durationSeconds":120}'
