@@ -86,9 +86,5 @@ externalPort = 4200
 localPort = 45677
 externalPort = 6800
 
-[[ports]]
-localPort = 46417
-externalPort = 8081
-
 [agent]
 integrations = ["javascript_database:1.0.0", "javascript_sendgrid:1.0.0", "javascript_openai:1.0.0", "javascript_object_storage:1.0.0"]
