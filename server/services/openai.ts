@@ -347,7 +347,7 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
       const completion = await openai.chat.completions.create({
         model: this.model,
         messages: messages as any,
-        max_tokens: 1000
+        max_completion_tokens: 1000
       });
 
       const response = completion.choices[0]?.message?.content;
