@@ -1,4 +1,6 @@
-import axios from 'axios';
+import fetch from 'node-fetch';
+import fs from 'fs';
+import path from 'path';
 
 export interface ElevenLabsVoiceSettings {
   stability: number;
@@ -18,6 +20,15 @@ export interface ElevenLabsVoice {
   name: string;
   category: string;
 }
+
+// Newton voice personas
+export const NEWTON_VOICES = {
+  isaac: "VOICE_ID_BRITISH",      // Isaac - British accent for professional outreach
+  mila: "VOICE_ID_SPANISH",       // Mila - Spanish accent for diverse market reach  
+  faris: "VOICE_ID_ARABIC"        // Faris - Arabic accent for Middle Eastern markets
+} as const;
+
+export type VoicePersona = keyof typeof NEWTON_VOICES;
 
 export class ElevenLabsService {
   private apiKey: string;
@@ -39,11 +50,16 @@ export class ElevenLabsService {
    */
   async getVoices(): Promise<ElevenLabsVoice[]> {
     try {
-      const response = await axios.get(`${this.baseUrl}/voices`, {
+      const response = await fetch(`${this.baseUrl}/voices`, {
         headers: this.headers
       });
       
-      return response.data.voices || [];
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json() as any;
+      return data.voices || [];
     } catch (error) {
       console.error('ElevenLabs get voices error:', error);
       throw new Error('Failed to fetch voices from ElevenLabs');
@@ -58,27 +74,59 @@ export class ElevenLabsService {
     request: ElevenLabsTextToSpeechRequest
   ): Promise<Buffer> {
     try {
-      const response = await axios.post(
+      const response = await fetch(
         `${this.baseUrl}/text-to-speech/${voiceId}`,
         {
-          text: request.text,
-          model_id: request.model_id || 'eleven_monolingual_v1',
-          voice_settings: request.voice_settings || {
-            stability: 0.5,
-            similarity_boost: 0.75
-          }
-        },
-        {
+          method: 'POST',
           headers: this.headers,
-          responseType: 'arraybuffer'
+          body: JSON.stringify({
+            text: request.text,
+            model_id: request.model_id || 'eleven_monolingual_v1',
+            voice_settings: request.voice_settings || {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
+          })
         }
       );
 
-      return Buffer.from(response.data);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
     } catch (error) {
       console.error('ElevenLabs text-to-speech error:', error);
       throw new Error('Failed to generate speech from ElevenLabs');
     }
+  }
+
+  /**
+   * Generate voice with file saving capability
+   */
+  async generateVoice(voiceId: string, text: string, fileName?: string): Promise<Buffer> {
+    const audioBuffer = await this.textToSpeech(voiceId, {
+      text,
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.75
+      }
+    });
+
+    // Save to file if fileName provided
+    if (fileName) {
+      const outputDir = path.join(process.cwd(), 'audio_output');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      const filePath = path.join(outputDir, `${fileName}.mp3`);
+      fs.writeFileSync(filePath, audioBuffer);
+      console.log(`🎵 Audio saved to: ${filePath}`);
+    }
+
+    return audioBuffer;
   }
 
   /**
@@ -107,16 +155,23 @@ export class ElevenLabsService {
 }
 
 /**
- * Isaac Newton Sales Navigator Voice Agent
+ * Newton Sales Navigator Voice Agent
  * Based on Newton's core principles and knowledge base
  */
-export class IsaacVoiceAgent {
+export class NewtonVoiceAgent {
   public elevenLabs: ElevenLabsService;
-  private voiceId: string;
+  private defaultPersona: VoicePersona;
 
-  constructor(elevenLabsService: ElevenLabsService, voiceId?: string) {
+  constructor(elevenLabsService: ElevenLabsService, defaultPersona: VoicePersona = 'isaac') {
     this.elevenLabs = elevenLabsService;
-    this.voiceId = voiceId || 'pNInz6obpgDQGcFmaJgB'; // Professional male voice
+    this.defaultPersona = defaultPersona;
+  }
+
+  /**
+   * Get voice ID for a specific persona
+   */
+  getVoiceId(persona?: VoicePersona): string {
+    return NEWTON_VOICES[persona || this.defaultPersona];
   }
 
   /**
@@ -153,37 +208,49 @@ export class IsaacVoiceAgent {
   }
 
   /**
-   * Generate voice response for Isaac
+   * Generate voice response with specific persona
    */
   async generateVoiceResponse(context: {
     type: 'b2c' | 'b2b' | 'ecosystem';
     name?: string;
     company?: string;
     demographic?: 'under-30' | '30-50' | '50+';
+    persona?: VoicePersona;
+    fileName?: string;
   }): Promise<Buffer> {
     const script = this.generateOutreachScript(context);
-    return this.elevenLabs.generateIsaacResponse(script, this.voiceId);
+    const voiceId = this.getVoiceId(context.persona);
+    return this.elevenLabs.generateVoice(voiceId, script, context.fileName);
   }
 
   /**
-   * Generate custom voice message
+   * Generate custom voice message with persona
    */
-  async generateCustomMessage(text: string): Promise<Buffer> {
-    // Add Isaac's personality to any custom message
-    const isaacText = `${text} This is Isaac from AskNewton, and I'm here to help keep your life in motion with simple, reliable insurance solutions.`;
-    return this.elevenLabs.generateIsaacResponse(isaacText, this.voiceId);
+  async generateCustomMessage(
+    text: string, 
+    persona?: VoicePersona, 
+    fileName?: string
+  ): Promise<Buffer> {
+    const voiceId = this.getVoiceId(persona);
+    const newtonText = `${text} This is ${persona || this.defaultPersona} from AskNewton, and I'm here to help keep your life in motion with simple, reliable insurance solutions.`;
+    return this.elevenLabs.generateVoice(voiceId, newtonText, fileName);
   }
 }
 
-// Factory function to create Isaac agent
-export function createIsaacAgent(): IsaacVoiceAgent | null {
+// Factory function to create Newton voice agent
+export function createNewtonAgent(defaultPersona: VoicePersona = 'isaac'): NewtonVoiceAgent | null {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   
   if (!apiKey) {
-    console.warn('ELEVENLABS_API_KEY not configured - Isaac voice agent disabled');
+    console.warn('ELEVENLABS_API_KEY not configured - Newton voice agent disabled');
     return null;
   }
 
   const elevenLabsService = new ElevenLabsService(apiKey);
-  return new IsaacVoiceAgent(elevenLabsService);
+  return new NewtonVoiceAgent(elevenLabsService, defaultPersona);
+}
+
+// Legacy factory function for backwards compatibility
+export function createIsaacAgent(): NewtonVoiceAgent | null {
+  return createNewtonAgent('isaac');
 }

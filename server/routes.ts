@@ -11,7 +11,17 @@ import path from "path";
 import { fileURLToPath } from "url";
 import twilio from "twilio";
 import nodemailer from "nodemailer";
-import { createIsaacAgent, type IsaacVoiceAgent } from "./services/elevenlabs";
+import { createIsaacAgent, createNewtonAgent, type NewtonVoiceAgent, type VoicePersona, NEWTON_VOICES } from "./services/elevenlabs";
+
+// Helper function to get persona descriptions
+function getPersonaDescription(persona: VoicePersona): string {
+  const descriptions = {
+    isaac: "British accent - Professional, authoritative voice for business outreach",
+    mila: "Spanish accent - Warm, engaging voice for diverse market reach",
+    faris: "Arabic accent - Culturally connected voice for Middle Eastern markets"
+  };
+  return descriptions[persona];
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -977,38 +987,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Isaac Voice Agent endpoints
-  const isaacAgent = createIsaacAgent();
+  // Newton Voice Agent endpoints
+  const newtonAgent = createNewtonAgent();
 
-  // Get available voices
-  app.get("/api/isaac/voices", async (req, res) => {
+  // Get Newton voice personas
+  app.get("/api/newton/personas", async (req, res) => {
     try {
-      if (!isaacAgent) {
+      const personas = Object.entries(NEWTON_VOICES).map(([name, voiceId]) => ({
+        name,
+        voiceId,
+        description: getPersonaDescription(name as VoicePersona)
+      }));
+      res.json({ personas });
+    } catch (error) {
+      console.error('Newton personas error:', error);
+      res.status(500).json({ error: "Failed to fetch personas" });
+    }
+  });
+
+  // Get available voices from ElevenLabs
+  app.get("/api/newton/voices", async (req, res) => {
+    try {
+      if (!newtonAgent) {
         return res.status(503).json({ 
           error: "ElevenLabs not configured", 
           message: "ELEVENLABS_API_KEY environment variable required" 
         });
       }
 
-      const voices = await isaacAgent.elevenLabs.getVoices();
+      const voices = await newtonAgent.elevenLabs.getVoices();
       res.json({ voices });
     } catch (error) {
-      console.error('Isaac get voices error:', error);
+      console.error('Newton get voices error:', error);
       res.status(500).json({ error: "Failed to fetch voices" });
     }
   });
 
-  // Generate Isaac voice response
-  app.post("/api/isaac/voice", async (req, res) => {
+  // Generate Newton voice response
+  app.post("/api/newton/voice", async (req, res) => {
     try {
-      if (!isaacAgent) {
+      if (!newtonAgent) {
         return res.status(503).json({ 
           error: "ElevenLabs not configured", 
           message: "ELEVENLABS_API_KEY environment variable required" 
         });
       }
 
-      const { type, name, company, demographic } = req.body;
+      const { type, name, company, demographic, persona, fileName } = req.body;
       
       // Validate required fields
       if (!type || !['b2c', 'b2b', 'ecosystem'].includes(type)) {
@@ -1018,11 +1043,146 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const audioBuffer = await isaacAgent.generateVoiceResponse({
+      // Validate persona if provided
+      if (persona && !Object.keys(NEWTON_VOICES).includes(persona)) {
+        return res.status(400).json({ 
+          error: "Invalid persona", 
+          message: `Persona must be one of: ${Object.keys(NEWTON_VOICES).join(', ')}` 
+        });
+      }
+
+      const audioBuffer = await newtonAgent.generateVoiceResponse({
+        type,
+        name,
+        company,
+        demographic,
+        persona: persona as VoicePersona,
+        fileName
+      });
+
+      const personaName = persona || 'isaac';
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audioBuffer.length.toString(),
+        'Content-Disposition': `attachment; filename="${personaName}-response.mp3"`
+      });
+
+      res.send(audioBuffer);
+    } catch (error) {
+      console.error('Newton voice generation error:', error);
+      res.status(500).json({ error: "Failed to generate voice response" });
+    }
+  });
+
+  // Generate custom Newton voice message  
+  app.post("/api/newton/custom", async (req, res) => {
+    try {
+      if (!newtonAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const { text, persona, fileName } = req.body;
+      
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ 
+          error: "Invalid text", 
+          message: "Text field is required and must be a string" 
+        });
+      }
+
+      // Validate persona if provided
+      if (persona && !Object.keys(NEWTON_VOICES).includes(persona)) {
+        return res.status(400).json({ 
+          error: "Invalid persona", 
+          message: `Persona must be one of: ${Object.keys(NEWTON_VOICES).join(', ')}` 
+        });
+      }
+
+      const audioBuffer = await newtonAgent.generateCustomMessage(text, persona as VoicePersona, fileName);
+
+      const personaName = persona || 'isaac';
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audioBuffer.length.toString(),
+        'Content-Disposition': `attachment; filename="${personaName}-custom.mp3"`
+      });
+
+      res.send(audioBuffer);
+    } catch (error) {
+      console.error('Newton custom message error:', error);
+      res.status(500).json({ error: "Failed to generate custom message" });
+    }
+  });
+
+  // Get Newton script preview (text only)
+  app.post("/api/newton/script", async (req, res) => {
+    try {
+      if (!newtonAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const { type, name, company, demographic, persona } = req.body;
+      
+      if (!type || !['b2c', 'b2b', 'ecosystem'].includes(type)) {
+        return res.status(400).json({ 
+          error: "Invalid type", 
+          message: "Type must be one of: b2c, b2b, ecosystem" 
+        });
+      }
+
+      // Validate persona if provided
+      if (persona && !Object.keys(NEWTON_VOICES).includes(persona)) {
+        return res.status(400).json({ 
+          error: "Invalid persona", 
+          message: `Persona must be one of: ${Object.keys(NEWTON_VOICES).join(', ')}` 
+        });
+      }
+
+      const script = newtonAgent.generateOutreachScript({
         type,
         name,
         company,
         demographic
+      });
+
+      res.json({ script, persona: persona || 'isaac' });
+    } catch (error) {
+      console.error('Newton script generation error:', error);
+      res.status(500).json({ error: "Failed to generate script" });
+    }
+  });
+
+  // Legacy Isaac endpoints for backwards compatibility
+  app.post("/api/isaac/voice", async (req, res) => {
+    try {
+      if (!newtonAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const { type, name, company, demographic } = req.body;
+      
+      if (!type || !['b2c', 'b2b', 'ecosystem'].includes(type)) {
+        return res.status(400).json({ 
+          error: "Invalid type", 
+          message: "Type must be one of: b2c, b2b, ecosystem" 
+        });
+      }
+
+      const audioBuffer = await newtonAgent.generateVoiceResponse({
+        type,
+        name,
+        company,
+        demographic,
+        persona: 'isaac'
       });
 
       res.set({
@@ -1038,10 +1198,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Generate custom Isaac voice message
   app.post("/api/isaac/custom", async (req, res) => {
     try {
-      if (!isaacAgent) {
+      if (!newtonAgent) {
         return res.status(503).json({ 
           error: "ElevenLabs not configured", 
           message: "ELEVENLABS_API_KEY environment variable required" 
@@ -1057,7 +1216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const audioBuffer = await isaacAgent.generateCustomMessage(text);
+      const audioBuffer = await newtonAgent.generateCustomMessage(text, 'isaac');
 
       res.set({
         'Content-Type': 'audio/mpeg',
@@ -1072,10 +1231,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get Isaac script preview (text only)
   app.post("/api/isaac/script", async (req, res) => {
     try {
-      if (!isaacAgent) {
+      if (!newtonAgent) {
         return res.status(503).json({ 
           error: "ElevenLabs not configured", 
           message: "ELEVENLABS_API_KEY environment variable required" 
@@ -1091,14 +1249,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const script = isaacAgent.generateOutreachScript({
+      const script = newtonAgent.generateOutreachScript({
         type,
         name,
         company,
         demographic
       });
 
-      res.json({ script });
+      res.json({ script, persona: 'isaac' });
     } catch (error) {
       console.error('Isaac script generation error:', error);
       res.status(500).json({ error: "Failed to generate script" });
