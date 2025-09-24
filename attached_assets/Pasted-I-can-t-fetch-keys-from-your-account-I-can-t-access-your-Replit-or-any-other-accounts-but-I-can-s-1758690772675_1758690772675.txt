@@ -1,0 +1,88 @@
+I can’t fetch keys from your account (I can’t access your Replit or any other accounts), but I can show you exactly where to *look* and how to create/manage them safely. Follow the steps below depending on which “key” you need — an **account API token** (for Replit REST/API access) or a **per-Repl secret** (environment variable used inside a specific Repl).
+
+---
+
+# 1) Find / create an **Account API Token** (Replit account-level token)
+
+Use this when you need a token to call Replit’s API (or third-party scripts that integrate with your Replit account).
+
+1. Sign in to [https://replit.com](https://replit.com) with your account.
+2. Click your avatar (top-right) → **Account** (or **Settings** / **Profile settings**).
+3. Look for a section labelled **API tokens**, **Developer**, **Personal access tokens**, or **Secrets & tokens**.
+4. If you don’t have one yet, click **Create new token** (or similar). Give it a descriptive name (e.g., `asknewton-replit-integration`) and create it.
+5. **Copy the token immediately** and store it in a secure place (you’ll usually only see it once).
+6. If you suspect a token is compromised, revoke/rotate it in the same screen.
+
+Notes: token names and exact labels vary slightly across UI versions — if you don’t see “API tokens” check Account → Developer or Security sections.
+
+---
+
+# 2) Add / find **Repl-level secrets** (env vars used inside a project)
+
+Use these when your code in a Repl needs an API key (ElevenLabs, OpenAI, Stripe, etc.) without committing it to source.
+
+1. Open the Repl (the project) in the Replit editor.
+2. On the left sidebar look for the lock icon or a section labelled **Secrets**, **Secrets (Environment variables)**, or **Environment**.
+3. Click **Add secret** (or the +).
+4. Enter the KEY name (e.g., `ELEVENLABS_API_KEY`) and the VALUE (paste the token). Save.
+5. In your code reference `process.env.ELEVENLABS_API_KEY` (Node) or `os.environ["ELEVENLABS_API_KEY"]` (Python) — Replit will inject it at runtime.
+6. To view or change, use the same Secrets UI. Replit won’t display the value in plaintext after initial save (only masked).
+
+---
+
+# 3) Replit Teams / Organization tokens
+
+If you’re using Replit Teams / Enterprise, tokens and secrets may be in **Team settings** or a team-level secrets area — ask the team owner or check Team → Settings → Secrets.
+
+---
+
+# 4) Optional: CLI / Automation (advanced)
+
+You can manage secrets programmatically with Replit’s CLI/automation tools if you use them. Check Replit docs for the current `replit` CLI commands (login, secrets add/list). Don’t run CLI commands that you don’t understand — let me draft safe examples if you want.
+
+---
+
+# 5) How to use a token securely (example snippets)
+
+Node (fetch / fetch-like):
+
+```js
+// read token from env (set in Replit Secrets)
+const key = process.env.REPLIT_API_TOKEN;
+await fetch("https://api.replit.com/...", {
+  headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+  method: "POST",
+  body: JSON.stringify({/*...*/})
+});
+```
+
+Python (requests):
+
+```py
+import os, requests
+key = os.environ.get("REPLIT_API_TOKEN")
+resp = requests.get("https://api.replit.com/...", headers={"Authorization": f"Bearer {key}"})
+```
+
+Never hardcode tokens in source or commit them to git.
+
+---
+
+# 6) Security best practices
+
+* **Never paste** API keys into chat, public code, or non-private docs.
+* Use **per-purpose tokens** (one token per integration) and descriptive names.
+* **Restrict scopes** where Replit supports it (create tokens only with the permissions you need).
+* **Rotate** tokens periodically and **revoke** any suspected-compromised ones.
+* Use Replit **Secrets** for runtime env vars; don’t store secrets in files.
+* Consider an external secrets manager (Vault/1Password/AWS Secrets Manager) for production.
+
+---
+
+If you want, I can:
+
+* Draft the exact token name + description you should create (and example scopes).
+* Generate the code snippet you’ll paste into a specific Repl (Node / Python / Go).
+* Walk you step-by-step while you’re on your screen (tell me which Replit view you see and I’ll guide next click).
+
+Which would you like me to do next?

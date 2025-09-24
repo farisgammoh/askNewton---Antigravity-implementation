@@ -11,6 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import twilio from "twilio";
 import nodemailer from "nodemailer";
+import { createIsaacAgent, type IsaacVoiceAgent } from "./services/elevenlabs";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Lead submission endpoint
@@ -973,6 +974,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Message processing error:', error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Isaac Voice Agent endpoints
+  const isaacAgent = createIsaacAgent();
+
+  // Get available voices
+  app.get("/api/isaac/voices", async (req, res) => {
+    try {
+      if (!isaacAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const voices = await isaacAgent.elevenLabs.getVoices();
+      res.json({ voices });
+    } catch (error) {
+      console.error('Isaac get voices error:', error);
+      res.status(500).json({ error: "Failed to fetch voices" });
+    }
+  });
+
+  // Generate Isaac voice response
+  app.post("/api/isaac/voice", async (req, res) => {
+    try {
+      if (!isaacAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const { type, name, company, demographic } = req.body;
+      
+      // Validate required fields
+      if (!type || !['b2c', 'b2b', 'ecosystem'].includes(type)) {
+        return res.status(400).json({ 
+          error: "Invalid type", 
+          message: "Type must be one of: b2c, b2b, ecosystem" 
+        });
+      }
+
+      const audioBuffer = await isaacAgent.generateVoiceResponse({
+        type,
+        name,
+        company,
+        demographic
+      });
+
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audioBuffer.length.toString(),
+        'Content-Disposition': 'attachment; filename="isaac-response.mp3"'
+      });
+
+      res.send(audioBuffer);
+    } catch (error) {
+      console.error('Isaac voice generation error:', error);
+      res.status(500).json({ error: "Failed to generate voice response" });
+    }
+  });
+
+  // Generate custom Isaac voice message
+  app.post("/api/isaac/custom", async (req, res) => {
+    try {
+      if (!isaacAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const { text } = req.body;
+      
+      if (!text || typeof text !== 'string') {
+        return res.status(400).json({ 
+          error: "Invalid text", 
+          message: "Text field is required and must be a string" 
+        });
+      }
+
+      const audioBuffer = await isaacAgent.generateCustomMessage(text);
+
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': audioBuffer.length.toString(),
+        'Content-Disposition': 'attachment; filename="isaac-custom.mp3"'
+      });
+
+      res.send(audioBuffer);
+    } catch (error) {
+      console.error('Isaac custom message error:', error);
+      res.status(500).json({ error: "Failed to generate custom message" });
+    }
+  });
+
+  // Get Isaac script preview (text only)
+  app.post("/api/isaac/script", async (req, res) => {
+    try {
+      if (!isaacAgent) {
+        return res.status(503).json({ 
+          error: "ElevenLabs not configured", 
+          message: "ELEVENLABS_API_KEY environment variable required" 
+        });
+      }
+
+      const { type, name, company, demographic } = req.body;
+      
+      if (!type || !['b2c', 'b2b', 'ecosystem'].includes(type)) {
+        return res.status(400).json({ 
+          error: "Invalid type", 
+          message: "Type must be one of: b2c, b2b, ecosystem" 
+        });
+      }
+
+      const script = isaacAgent.generateOutreachScript({
+        type,
+        name,
+        company,
+        demographic
+      });
+
+      res.json({ script });
+    } catch (error) {
+      console.error('Isaac script generation error:', error);
+      res.status(500).json({ error: "Failed to generate script" });
     }
   });
 
