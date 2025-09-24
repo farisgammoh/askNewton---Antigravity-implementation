@@ -1,3 +1,30 @@
+Goal
+
+Enhance asknewton-webhooks with:
+
+/events/ui – HTML table (search/sort/filter), color-coded types
+
+/metrics – Prometheus-format counters
+
+/events/replay/:id – safely re-run your own processing on a stored event
+
+1) package.json (add static serving, no new deps required)
+
+No change needed if you already have:
+
+{
+  "name": "asknewton-webhooks",
+  "version": "1.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": { "start": "node server.js", "dev": "NODE_ENV=development node server.js" },
+  "dependencies": { "express": "^4.19.2", "node-fetch": "^3.3.2" }
+}
+
+2) Update server.js
+
+Replace your current server.js with this upgraded version (keeps your Slack + HMAC + idempotency exactly as before, and adds UI/metrics/replay):
+
 import express from "express";
 import crypto from "crypto";
 import fetch from "node-fetch";
@@ -214,3 +241,155 @@ app.use((err, req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`asknewton-webhooks listening on :${PORT}`);
 });
+
+3) Add UI files
+
+Create folder: public/
+
+public/events.html
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AskNewton Webhooks — Events</title>
+  <link rel="stylesheet" href="/public/events.css" />
+</head>
+<body>
+  <header>
+    <h1>AskNewton Webhooks — Events</h1>
+    <nav>
+      <a href="/healthz" target="_blank">healthz</a>
+      <a href="/version" target="_blank">version</a>
+      <a href="/metrics" target="_blank">metrics</a>
+      <a href="/events" target="_blank">events.json</a>
+    </nav>
+  </header>
+
+  <section class="controls">
+    <input id="search" placeholder="Search id/type/body…" />
+    <select id="type">
+      <option value="">All types</option>
+      <option value="conversation-init">conversation-init</option>
+      <option value="conversation-end">conversation-end</option>
+    </select>
+    <button id="refresh">Refresh</button>
+  </section>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>ID</th><th>Type</th><th>Time (UTC)</th><th>Path</th><th>Body (preview)</th><th>Replay</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script src="/public/events.js"></script>
+</body>
+</html>
+
+
+public/events.css
+
+* { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+body { margin: 20px; }
+header { display: flex; align-items: baseline; gap: 20px; }
+nav a { margin-right: 12px; text-decoration: none; color: #0366d6; }
+.controls { margin: 16px 0; display: flex; gap: 10px; }
+#search { width: 320px; padding: 8px; }
+select, button { padding: 8px; }
+table { width: 100%; border-collapse: collapse; }
+thead { background: #f3f4f6; }
+th, td { padding: 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+tbody tr:hover { background: #f9fafb; }
+.badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #111827; }
+.badge.init { background: #d1fae5; }       /* green */
+.badge.end  { background: #dbEafe; }       /* blue */
+.replay-btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; background: #fff; }
+.replay-btn:hover { background: #f3f4f6; }
+
+
+public/events.js
+
+async function fetchEvents() {
+  const q = document.getElementById("search").value.trim();
+  const type = document.getElementById("type").value;
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (type) params.set("type", type);
+  params.set("limit", "200");
+  const res = await fetch(`/events?${params.toString()}`);
+  const data = await res.json();
+  return data.items || [];
+}
+
+function badge(type) {
+  const span = document.createElement("span");
+  span.className = "badge " + (type === "conversation-init" ? "init" : "end");
+  span.textContent = type;
+  return span;
+}
+
+async function replay(id) {
+  const btn = document.querySelector(`button[data-id="${id}"]`);
+  btn.disabled = true;
+  btn.textContent = "Replaying…";
+  try {
+    const res = await fetch(`/events/replay/${encodeURIComponent(id)}`, { method: "POST" });
+    const data = await res.json();
+    btn.textContent = data.ok ? "Replayed" : "Failed";
+  } catch {
+    btn.textContent = "Error";
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.textContent = "Replay"; }, 1200);
+  }
+}
+
+async function render() {
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "";
+  const items = await fetchEvents();
+  for (const e of items) {
+    const tr = document.createElement("tr");
+
+    const tdId = document.createElement("td"); tdId.textContent = e.id;
+    const tdType = document.createElement("td"); tdType.appendChild(badge(e.type));
+    const tdTs = document.createElement("td"); tdTs.textContent = e.ts;
+    const tdPath = document.createElement("td"); tdPath.textContent = e.path;
+    const tdBody = document.createElement("td"); tdBody.textContent = e.body_preview || "";
+    const tdReplay = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = "replay-btn";
+    btn.textContent = "Replay";
+    btn.dataset.id = e.id;
+    btn.onclick = () => replay(e.id);
+    tdReplay.appendChild(btn);
+
+    tr.append(tdId, tdType, tdTs, tdPath, tdBody, tdReplay);
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("refresh").onclick = render;
+document.getElementById("search").oninput = () => { clearTimeout(window.__t); window.__t = setTimeout(render, 250); };
+document.getElementById("type").onchange = render;
+
+// auto-refresh every 10s
+setInterval(render, 10000);
+render();
+
+4) Run
+npm install
+npm start
+
+
+Open:
+
+UI: /events/ui
+
+JSON: /events?limit=50
+
+Metrics: /metrics
+
+Your Slack alerts continue to fire on missing secrets, invalid signatures, and unhandled errors. Replay safely re-invokes your local processEvent logic without calling ElevenLabs.
