@@ -1,10 +1,27 @@
+Goal: Stand up a secure ElevenLabs webhook handler with Slack alerts.
+
+package.json
+{
+  "name": "asknewton-webhooks",
+  "version": "1.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2"
+  }
+}
+
+server.js
 import express from "express";
 import crypto from "crypto";
 import fetch from "node-fetch";
 
 const app = express();
-
-// --- Config ---
 const PORT = process.env.PORT || 3000;
 const MAX_EVENTS = 200; // cap in-memory store
 
@@ -29,9 +46,9 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; }
 }));
 
-// --- In-memory event store (for debugging + idempotency) ---
+// --- In-memory event store ---
 const seenIds = new Set();
-const events = []; // [{id, type, ts, path, body}]
+const events = [];
 
 function recordEvent({ id, type, path, body }) {
   const ts = new Date().toISOString();
@@ -39,7 +56,7 @@ function recordEvent({ id, type, path, body }) {
   if (events.length > MAX_EVENTS) events.pop();
 }
 
-// --- HMAC helpers ---
+// --- HMAC verification ---
 const CANDIDATE_HEADERS = [
   "x-elevenlabs-signature",
   "x-signature",
@@ -80,8 +97,7 @@ function guard(secretEnvKey) {
   };
 }
 
-// --- Idempotency helper ---
-// If payload contains `id` or `event_id`, skip duplicates
+// --- Idempotency middleware ---
 function idempotency(req, res, next) {
   const id = req.body?.id || req.body?.event_id;
   if (!id) return next();
@@ -92,21 +108,14 @@ function idempotency(req, res, next) {
   next();
 }
 
-// --- Webhooks ---
+// --- Webhook routes ---
 app.post(
   "/webhooks/eleven/conversation-init",
   guard("ELEVEN_INIT_SECRET"),
   idempotency,
   (req, res) => {
-    // Optional: enforce a simple shape
     const id = req.body?.id || req.body?.event_id || `init-${Date.now()}`;
-    recordEvent({
-      id,
-      type: "conversation-init",
-      path: req.path,
-      body: req.body
-    });
-    // TODO: kick off your own async processing if needed
+    recordEvent({ id, type: "conversation-init", path: req.path, body: req.body });
     res.json({ ok: true });
   }
 );
@@ -117,29 +126,21 @@ app.post(
   idempotency,
   (req, res) => {
     const id = req.body?.id || req.body?.event_id || `end-${Date.now()}`;
-    recordEvent({
-      id,
-      type: "conversation-end",
-      path: req.path,
-      body: req.body
-    });
+    recordEvent({ id, type: "conversation-end", path: req.path, body: req.body });
     res.json({ ok: true });
   }
 );
 
-// --- Health & diagnostics ---
+// --- Health + diagnostics ---
 app.get("/healthz", (_req, res) => res.json({ ok: true, service: "asknewton-webhooks" }));
 app.get("/version", (_req, res) => res.json({ version: "1.1.0" }));
-
-// VERY basic read-only events viewer (trimmed bodies for safety)
 app.get("/events", (_req, res) => {
   const trimmed = events.map(e => ({
     id: e.id,
     type: e.type,
     ts: e.ts,
     path: e.path,
-    // Avoid dumping large/PII-heavy payloads:
-    body_preview: JSON.stringify(e.body ?? {}).slice(0, 600)
+    body_preview: JSON.stringify(e.body).slice(0, 600)
   }));
   res.json({ count: trimmed.length, items: trimmed });
 });
@@ -154,3 +155,19 @@ app.use((err, req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`asknewton-webhooks listening on :${PORT}`);
 });
+
+✅ Required Secrets (Replit → Secrets)
+ELEVEN_INIT_SECRET = <ElevenLabs secret for init>
+ELEVEN_END_SECRET  = <ElevenLabs secret for end>
+SLACK_WEBHOOK_URL  = <your Slack incoming webhook>
+PORT = 3000   # optional
+
+🔍 Verify
+
+GET /healthz → { ok: true, service: "asknewton-webhooks" }
+
+GET /version → version info
+
+GET /events → recent deliveries
+
+Run Send Test Event in ElevenLabs → should return 200 OK, event visible in /events, and Slack alerts appear for any invalid/missing signature.
