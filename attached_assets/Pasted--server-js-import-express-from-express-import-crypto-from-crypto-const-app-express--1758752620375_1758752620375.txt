@@ -1,0 +1,83 @@
+// server.js
+import express from "express";
+import crypto from "crypto";
+
+const app = express();
+
+// Capture raw body for HMAC verification
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf; // keep raw bytes for signing
+    },
+  })
+);
+
+function verifyElevenLabsSignature(req) {
+  const secret = process.env.ELEVENLABS_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("Missing ELEVENLABS_WEBHOOK_SECRET");
+    return false;
+  }
+
+  // ElevenLabs will include a signature header – common patterns:
+  // Try a few common header keys to be robust:
+  const sigHeader =
+    req.get("x-elevenlabs-signature") ||
+    req.get("x-signature") ||
+    req.get("x-webhook-signature") ||
+    req.get("x-hub-signature") ||
+    ""; // adjust if your docs specify an exact header name
+
+  // Compute HMAC SHA256 of raw body using your secret
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(req.rawBody || Buffer.from(""))
+    .digest("hex");
+
+  // Constant-time compare
+  const safeEqual = (a, b) => {
+    const ah = Buffer.from(a);
+    const bh = Buffer.from(b);
+    if (ah.length !== bh.length) return false;
+    return crypto.timingSafeEqual(ah, bh);
+  };
+
+  return safeEqual(computed, sigHeader);
+}
+
+// A tiny guard
+function requireValidSignature(req, res, next) {
+  if (!verifyElevenLabsSignature(req)) {
+    return res.status(401).json({ ok: false, error: "Invalid signature" });
+  }
+  next();
+}
+
+// Your webhook handlers
+app.post(
+  "/webhooks/eleven/conversation-init",
+  requireValidSignature,
+  (req, res) => {
+    // Handle "conversation init" event
+    console.log("ELEVEN: conversation-init", req.body);
+    // ...your logic...
+    res.json({ ok: true });
+  }
+);
+
+app.post(
+  "/webhooks/eleven/conversation-end",
+  requireValidSignature,
+  (req, res) => {
+    // Handle "conversation end" event
+    console.log("ELEVEN: conversation-end", req.body);
+    // ...your logic...
+    res.json({ ok: true });
+  }
+);
+
+const port = process.env.PORT || 3000;
+app.listen(port, () =>
+  console.log(`Webhook server listening on port ${port}`)
+);
