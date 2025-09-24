@@ -926,7 +926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const aiService = askNewtonAI;
           if (aiService) {
             // Use OpenAI to generate contextual response for health insurance queries
-            const smartResponse = await aiService.generateChatResponse(Body, "health_insurance_guidance");
+            const smartResponse = await aiService.generateChatResponse(Body, []);
             if (smartResponse) {
               followUp = smartResponse;
             }
