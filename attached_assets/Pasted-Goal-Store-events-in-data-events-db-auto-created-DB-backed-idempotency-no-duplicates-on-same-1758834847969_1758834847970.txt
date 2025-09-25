@@ -1,0 +1,388 @@
+Goal
+
+Store events in ./data/events.db (auto-created).
+
+DB-backed idempotency (no duplicates on same id).
+
+/events, /events/ui, /events/replay/:id now read from DB.
+
+Keep Slack alerts, metrics, health/version, Prometheus counters.
+
+1) package.json (add sqlite3)
+
+Replace or merge:
+
+{
+  "name": "asknewton-webhooks",
+  "version": "1.2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2",
+    "sqlite3": "^5.1.7"
+  }
+}
+
+
+If sqlite3 fails to build (rare on Replit), tell me and I’ll swap to sql.js (pure WASM). But Replit usually handles sqlite3 fine.
+
+2) Create db.js
+
+Add a tiny async wrapper for SQLite and migrations.
+
+// db.js
+import fs from "fs";
+import path from "path";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const DB_PATH = path.join(DATA_DIR, "events.db");
+
+export async function initDb() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+  const db = await open({
+    filename: DB_PATH,
+    driver: sqlite3.Database
+  });
+
+  // Pragmas for durability + decent perf
+  await db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA foreign_keys = ON;
+  `);
+
+  // Migrations
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      ts   TEXT NOT NULL,
+      path TEXT NOT NULL,
+      body TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_ts   ON events(ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+  `);
+
+  return db;
+}
+
+// Insert if NOT exists (idempotent)
+export async function insertEvent(db, { id, type, path, body }) {
+  const ts = new Date().toISOString();
+  await db.run(
+    `INSERT OR IGNORE INTO events (id, type, ts, path, body) VALUES (?, ?, ?, ?, ?)`,
+    [id, type, ts, path, JSON.stringify(body ?? {})]
+  );
+  // returns info via db.get changes count if needed, but not necessary here
+}
+
+// Simple filter/search with limit
+export async function listEvents(db, { type, q, limit = 100 }) {
+  const clauses = [];
+  const params = [];
+
+  if (type) {
+    clauses.push(`type = ?`);
+    params.push(type);
+  }
+  if (q) {
+    // Search id/type/path/body
+    clauses.push(`(LOWER(id) LIKE ? OR LOWER(type) LIKE ? OR LOWER(path) LIKE ? OR LOWER(body) LIKE ?)`);
+    const like = `%${q.toLowerCase()}%`;
+    params.push(like, like, like, like);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const n = Math.min(parseInt(limit, 10) || 100, 500);
+
+  return db.all(
+    `SELECT id, type, ts, path, substr(body, 1, 1200) as body_preview
+     FROM events
+     ${where}
+     ORDER BY ts DESC
+     LIMIT ?`,
+    [...params, n]
+  );
+}
+
+export async function getEventById(db, id) {
+  return db.get(`SELECT id, type, ts, path, body FROM events WHERE id = ?`, [id]);
+}
+
+3) Update server.js
+
+Replace your current server.js with this DB-backed version (keeps Slack/HMAC/metrics/UI unchanged, swaps in SQLite):
+
+import express from "express";
+import crypto from "crypto";
+import fetch from "node-fetch";
+import path from "path";
+import { fileURLToPath } from "url";
+import { initDb, insertEvent, listEvents, getEventById } from "./db.js";
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const MAX_EVENTS_COUNTER_ONLY = 200; // used for metrics only (DB stores all)
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- Slack Alert ---
+async function sendSlackAlert(message) {
+  const webhook = process.env.SLACK_WEBHOOK_URL;
+  if (!webhook) return;
+  try {
+    await fetch(webhook, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: message })
+    });
+  } catch (err) {
+    console.error("Slack alert failed:", err.message);
+  }
+}
+
+// --- Raw body for HMAC ---
+app.use(express.json({
+  limit: "1mb",
+  verify: (req, _res, buf) => { req.rawBody = buf; }
+}));
+
+// --- Static assets for UI ---
+app.use("/public", express.static(path.join(__dirname, "public")));
+
+// --- Metrics (counters only; events now persisted in DB) ---
+const metrics = {
+  events_total: 0,
+  duplicates_total: 0,
+  invalid_signature_total: 0,
+  errors_total: 0
+};
+
+// --- HMAC verification ---
+const SIG_HEADERS = [
+  "x-elevenlabs-signature",
+  "x-signature",
+  "x-webhook-signature",
+  "x-hub-signature"
+];
+
+function getSignatureHeader(req) {
+  return SIG_HEADERS.map(h => req.get(h)).find(Boolean) || "";
+}
+
+function verifyHmac(req, secret) {
+  const sigHeader = getSignatureHeader(req);
+  const computed = crypto
+    .createHmac("sha256", secret)
+    .update(req.rawBody || Buffer.from(""))
+    .digest("hex");
+  try {
+    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(sigHeader));
+  } catch {
+    return false;
+  }
+}
+
+function guard(secretEnvKey) {
+  return (req, res, next) => {
+    const secret = process.env[secretEnvKey];
+    if (!secret) {
+      sendSlackAlert(`🚨 Missing secret: ${secretEnvKey}`);
+      metrics.errors_total++;
+      return res.status(500).json({ ok: false, error: `${secretEnvKey} missing` });
+    }
+    if (!verifyHmac(req, secret)) {
+      sendSlackAlert(`⚠️ Invalid signature on ${req.path}`);
+      metrics.invalid_signature_total++;
+      return res.status(401).json({ ok: false, error: "Invalid signature" });
+    }
+    next();
+  };
+}
+
+// --- Business processing stub (extend as needed) ---
+async function processEvent({ type, body }) {
+  // TODO: push to queue / forward to AskNewton app asynchronously
+  return { processed: true, type };
+}
+
+// === DB init ===
+let db;
+initDb()
+  .then((d) => { db = d; console.log("SQLite ready"); })
+  .catch((err) => {
+    console.error("DB init failed:", err);
+    process.exit(1);
+  });
+
+// --- DB-backed idempotency + record ---
+async function recordIfNew({ id, type, path, body }) {
+  // Attempt insert (INSERT OR IGNORE). If exists, treat as duplicate.
+  await insertEvent(db, { id, type, path, body });
+  // Check whether it exists now (it always will) but we need to detect duplicate:
+  const row = await getEventById(db, id);
+  // If ts is within ~1s and metrics bump happened twice? Simpler: count duplicates by trying a second insert?
+  // We'll detect duplicate by checking if request body had an id AND insertion didn't increase events_total.
+  // For counters, we’ll look up whether row.ts is very recent AND we just processed same id after another within same runtime.
+  // Practical approach: we increment events_total only when we **process**; duplicates return flag to caller.
+  return row; // Always returns row; caller decides if duplicate based on prior existence if needed
+}
+
+// Helper: attempts to insert and tells if it was duplicate via changes()
+async function insertOrDetectDuplicate({ id, type, path, body }) {
+  // Try a manual check first — duplicates are when ID already exists
+  const existing = await getEventById(db, id);
+  if (existing) return { duplicate: true };
+
+  await insertEvent(db, { id, type, path, body });
+  return { duplicate: false };
+}
+
+// --- Webhooks ---
+app.post("/webhooks/eleven/conversation-init",
+  guard("ELEVEN_INIT_SECRET"),
+  async (req, res) => {
+    const id = req.body?.id || req.body?.event_id || `init-${Date.now()}`;
+    const { duplicate } = await insertOrDetectDuplicate({
+      id, type: "conversation-init", path: req.path, body: req.body
+    });
+
+    if (duplicate) {
+      metrics.duplicates_total++;
+      return res.json({ ok: true, duplicate: true });
+    }
+
+    metrics.events_total++;
+    processEvent({ type: "conversation-init", body: req.body }).catch(err => {
+      metrics.errors_total++; sendSlackAlert(`🔥 Processing error (init): ${err.message}`);
+    });
+    res.json({ ok: true });
+  }
+);
+
+app.post("/webhooks/eleven/conversation-end",
+  guard("ELEVEN_END_SECRET"),
+  async (req, res) => {
+    const id = req.body?.id || req.body?.event_id || `end-${Date.now()}`;
+    const { duplicate } = await insertOrDetectDuplicate({
+      id, type: "conversation-end", path: req.path, body: req.body
+    });
+
+    if (duplicate) {
+      metrics.duplicates_total++;
+      return res.json({ ok: true, duplicate: true });
+    }
+
+    metrics.events_total++;
+    processEvent({ type: "conversation-end", body: req.body }).catch(err => {
+      metrics.errors_total++; sendSlackAlert(`🔥 Processing error (end): ${err.message}`);
+    });
+    res.json({ ok: true });
+  }
+);
+
+// --- Health / Version ---
+app.get("/healthz", (_req, res) => res.json({ ok: true, service: "asknewton-webhooks" }));
+app.get("/version", (_req, res) => res.json({ version: "1.2.0" }));
+
+// --- JSON Events API (DB-backed) ---
+app.get("/events", async (req, res) => {
+  const { type, q, limit = "100" } = req.query;
+  try {
+    const items = await listEvents(db, { type: type ? String(type) : undefined, q: q ? String(q) : undefined, limit: String(limit) });
+    res.json({ count: items.length, items });
+  } catch (err) {
+    metrics.errors_total++; sendSlackAlert(`🔥 /events error: ${err.message}`);
+    res.status(500).json({ ok: false, error: "DB error" });
+  }
+});
+
+// --- Pretty UI for Events (unchanged) ---
+app.get("/events/ui", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "events.html"));
+});
+
+// --- Replay by id (reads full body from DB) ---
+app.post("/events/replay/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const evt = await getEventById(db, id);
+    if (!evt) return res.status(404).json({ ok: false, error: "Not found" });
+    const result = await processEvent({ type: evt.type, body: JSON.parse(evt.body) });
+    res.json({ ok: true, replayed: id, result });
+  } catch (err) {
+    metrics.errors_total++; sendSlackAlert(`🔥 Replay error ${id}: ${err.message}`);
+    res.status(500).json({ ok: false, error: "Replay failed" });
+  }
+});
+
+// --- Prometheus metrics (unchanged) ---
+app.get("/metrics", (_req, res) => {
+  res.type("text/plain").send(
+    [
+      "# HELP asknewton_events_total Total accepted events",
+      "# TYPE asknewton_events_total counter",
+      `asknewton_events_total ${metrics.events_total}`,
+      "# HELP asknewton_duplicates_total Total duplicate events",
+      "# TYPE asknewton_duplicates_total counter",
+      `asknewton_duplicates_total ${metrics.duplicates_total}`,
+      "# HELP asknewton_invalid_signature_total Invalid signature attempts",
+      "# TYPE asknewton_invalid_signature_total counter",
+      `asknewton_invalid_signature_total ${metrics.invalid_signature_total}`,
+      "# HELP asknewton_errors_total Processing/server errors",
+      "# TYPE asknewton_errors_total counter",
+      `asknewton_errors_total ${metrics.errors_total}`
+    ].join("\n")
+  );
+});
+
+// --- Error handler ---
+app.use((err, req, res, _next) => {
+  console.error("Unhandled error:", err);
+  metrics.errors_total++;
+  sendSlackAlert(`🔥 Error on ${req.path}: ${err.message}`);
+  res.status(500).json({ ok: false, error: "Server error" });
+});
+
+app.listen(PORT, () => {
+  console.log(`asknewton-webhooks listening on :${PORT}`);
+});
+
+
+Note: The UI under /events/ui and assets in /public remain exactly as you already have them—no changes needed.
+
+4) Run it
+npm install
+npm start
+
+
+Smoke test:
+
+GET /healthz → { ok: true, service: "asknewton-webhooks" }
+
+GET /version → { "version": "1.2.0" }
+
+GET /events?limit=5 → returns rows (empty at first)
+
+Use ElevenLabs Send Test Event, then refresh /events/ui
+
+5) Notes
+
+Idempotency is now DB-backed: if an event with the same id (or event_id) arrives again, it’s ignored and you’ll get { ok: true, duplicate: true }.
+
+Persistence: events survive Replit restarts in ./data/events.db.
+
+Replay reads the full JSON body from DB and calls processEvent.
+
+Scaling: if you expect very high write rates, we can add a simple write queue or connection pool tuning.
