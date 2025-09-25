@@ -3,10 +3,11 @@ import crypto from "crypto";
 import fetch from "node-fetch";
 import path from "path";
 import { fileURLToPath } from "url";
+import { initDb, insertEvent, listEvents, getEventById } from "./db.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MAX_EVENTS = 200;
+const MAX_EVENTS_COUNTER_ONLY = 200; // used for metrics only (DB stores all)
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,9 +36,7 @@ app.use(express.json({
 // --- Static assets for UI ---
 app.use("/public", express.static(path.join(__dirname, "public")));
 
-// --- In-memory store & metrics ---
-const seenIds = new Set();
-const events = []; // {id,type,ts,path,body}
+// --- Metrics (counters only; events now persisted in DB) ---
 const metrics = {
   events_total: 0,
   duplicates_total: 0,
@@ -45,13 +44,7 @@ const metrics = {
   errors_total: 0
 };
 
-function recordEvent({ id, type, path, body }) {
-  const ts = new Date().toISOString();
-  events.unshift({ id, type, ts, path, body });
-  metrics.events_total++;
-  if (events.length > MAX_EVENTS) events.pop();
-}
-
+// --- HMAC verification ---
 const SIG_HEADERS = [
   "x-elevenlabs-signature",
   "x-signature",
@@ -93,32 +86,59 @@ function guard(secretEnvKey) {
   };
 }
 
-function idempotency(req, res, next) {
-  const id = req.body?.id || req.body?.event_id;
-  if (!id) return next();
-  if (seenIds.has(id)) {
-    metrics.duplicates_total++;
-    return res.json({ ok: true, duplicate: true });
-  }
-  seenIds.add(id);
-  next();
+// --- Business processing stub (extend as needed) ---
+async function processEvent({ type, body }) {
+  // TODO: push to queue / forward to AskNewton app asynchronously
+  return { processed: true, type };
 }
 
-// --- Your business processing stub (extend as needed) ---
-async function processEvent({ type, body }) {
-  // TODO: push to queue, call your app, etc.
-  // Keep this fast; do heavy work async.
-  return { processed: true, type };
+// === DB init ===
+let db;
+initDb()
+  .then((d) => { db = d; console.log("SQLite ready"); })
+  .catch((err) => {
+    console.error("DB init failed:", err);
+    process.exit(1);
+  });
+
+// --- DB-backed idempotency + record ---
+async function recordIfNew({ id, type, path, body }) {
+  // Attempt insert (INSERT OR IGNORE). If exists, treat as duplicate.
+  await insertEvent(db, { id, type, path, body });
+  // Check whether it exists now (it always will) but we need to detect duplicate:
+  const row = await getEventById(db, id);
+  // If ts is within ~1s and metrics bump happened twice? Simpler: count duplicates by trying a second insert?
+  // We'll detect duplicate by checking if request body had an id AND insertion didn't increase events_total.
+  // For counters, we'll look up whether row.ts is very recent AND we just processed same id after another within same runtime.
+  // Practical approach: we increment events_total only when we **process**; duplicates return flag to caller.
+  return row; // Always returns row; caller decides if duplicate based on prior existence if needed
+}
+
+// Helper: attempts to insert and tells if it was duplicate via changes()
+async function insertOrDetectDuplicate({ id, type, path, body }) {
+  // Try a manual check first — duplicates are when ID already exists
+  const existing = await getEventById(db, id);
+  if (existing) return { duplicate: true };
+
+  await insertEvent(db, { id, type, path, body });
+  return { duplicate: false };
 }
 
 // --- Webhooks ---
 app.post("/webhooks/eleven/conversation-init",
   guard("ELEVEN_INIT_SECRET"),
-  idempotency,
   async (req, res) => {
     const id = req.body?.id || req.body?.event_id || `init-${Date.now()}`;
-    recordEvent({ id, type: "conversation-init", path: req.path, body: req.body });
-    // fire-and-forget processing
+    const { duplicate } = await insertOrDetectDuplicate({
+      id, type: "conversation-init", path: req.path, body: req.body
+    });
+
+    if (duplicate) {
+      metrics.duplicates_total++;
+      return res.json({ ok: true, duplicate: true });
+    }
+
+    metrics.events_total++;
     processEvent({ type: "conversation-init", body: req.body }).catch(err => {
       metrics.errors_total++; sendSlackAlert(`🔥 Processing error (init): ${err.message}`);
     });
@@ -128,10 +148,18 @@ app.post("/webhooks/eleven/conversation-init",
 
 app.post("/webhooks/eleven/conversation-end",
   guard("ELEVEN_END_SECRET"),
-  idempotency,
   async (req, res) => {
     const id = req.body?.id || req.body?.event_id || `end-${Date.now()}`;
-    recordEvent({ id, type: "conversation-end", path: req.path, body: req.body });
+    const { duplicate } = await insertOrDetectDuplicate({
+      id, type: "conversation-end", path: req.path, body: req.body
+    });
+
+    if (duplicate) {
+      metrics.duplicates_total++;
+      return res.json({ ok: true, duplicate: true });
+    }
+
+    metrics.events_total++;
     processEvent({ type: "conversation-end", body: req.body }).catch(err => {
       metrics.errors_total++; sendSlackAlert(`🔥 Processing error (end): ${err.message}`);
     });
@@ -141,49 +169,40 @@ app.post("/webhooks/eleven/conversation-end",
 
 // --- Health / Version ---
 app.get("/healthz", (_req, res) => res.json({ ok: true, service: "asknewton-webhooks" }));
-app.get("/version", (_req, res) => res.json({ version: "1.1.0" }));
+app.get("/version", (_req, res) => res.json({ version: "1.2.0" }));
 
-// --- JSON Events API (with basic filtering) ---
-app.get("/events", (req, res) => {
+// --- JSON Events API (DB-backed) ---
+app.get("/events", async (req, res) => {
   const { type, q, limit = "100" } = req.query;
-  let list = events;
-  if (type) list = list.filter(e => e.type === String(type));
-  if (q) {
-    const s = String(q).toLowerCase();
-    list = list.filter(e =>
-      e.id.toLowerCase().includes(s) ||
-      e.type.toLowerCase().includes(s) ||
-      JSON.stringify(e.body ?? {}).toLowerCase().includes(s)
-    );
+  try {
+    const items = await listEvents(db, { type: type ? String(type) : undefined, q: q ? String(q) : undefined, limit: String(limit) });
+    res.json({ count: items.length, items });
+  } catch (err) {
+    metrics.errors_total++; sendSlackAlert(`🔥 /events error: ${err.message}`);
+    res.status(500).json({ ok: false, error: "DB error" });
   }
-  const n = Math.min(parseInt(String(limit), 10) || 100, 500);
-  const trimmed = list.slice(0, n).map(e => ({
-    id: e.id, type: e.type, ts: e.ts, path: e.path,
-    body_preview: JSON.stringify(e.body ?? {}).slice(0, 1200)
-  }));
-  res.json({ count: trimmed.length, items: trimmed });
 });
 
-// --- Pretty UI for Events ---
+// --- Pretty UI for Events (unchanged) ---
 app.get("/events/ui", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "events.html"));
 });
 
-// --- Replay an event by id (reprocess in-process only) ---
+// --- Replay by id (reads full body from DB) ---
 app.post("/events/replay/:id", async (req, res) => {
   const { id } = req.params;
-  const evt = events.find(e => e.id === id);
-  if (!evt) return res.status(404).json({ ok: false, error: "Not found" });
   try {
-    const result = await processEvent({ type: evt.type, body: evt.body });
+    const evt = await getEventById(db, id);
+    if (!evt) return res.status(404).json({ ok: false, error: "Not found" });
+    const result = await processEvent({ type: evt.type, body: JSON.parse(evt.body) });
     res.json({ ok: true, replayed: id, result });
   } catch (err) {
     metrics.errors_total++; sendSlackAlert(`🔥 Replay error ${id}: ${err.message}`);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: "Replay failed" });
   }
 });
 
-// --- Prometheus metrics ---
+// --- Prometheus metrics (unchanged) ---
 app.get("/metrics", (_req, res) => {
   res.type("text/plain").send(
     [
