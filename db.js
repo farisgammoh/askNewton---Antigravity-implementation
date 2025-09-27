@@ -34,6 +34,22 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_events_ts   ON events(ts DESC);
     CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+
+    CREATE TABLE IF NOT EXISTS outbound_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      url TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      next_attempt_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_outbound_pending ON outbound_attempts(status, next_attempt_at);
   `);
 
   return db;
