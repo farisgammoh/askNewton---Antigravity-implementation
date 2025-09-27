@@ -1,0 +1,132 @@
+Ugh—five back-to-back transient (“We’re sorry… try again”) errors on the same time-based trigger means your job is hitting brief Apps Script hiccups or overlapping with itself. Let’s harden it so these don’t take the run down.
+
+Do this now (copy-paste ready)
+
+1) Add lock + retries (drop-in helpers)
+
+/** Exponential backoff with jitter for transient Apps Script errors */
+function withRetry(fn, opts = {}) {
+  const {
+    attempts = 6,        // total tries
+    baseMs = 400,        // starting backoff
+    factor = 2.0,        // exponential factor
+    jitter = true,
+    isTransient = defaultTransientCheck,
+    onRetry = (err, i, delay) => console.warn(`Retry #${i+1} in ${delay}ms: ${err && err.message}`)
+  } = opts;
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return fn(); }
+    catch (err) {
+      lastErr = err;
+      if (!isTransient(err) || i === attempts - 1) throw err;
+      const delay = Math.round(baseMs * Math.pow(factor, i) * (jitter ? (0.5 + Math.random()) : 1));
+      onRetry(err, i, delay);
+      Utilities.sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+function defaultTransientCheck(err) {
+  const msg = String(err && err.message || '').toLowerCase();
+  return (
+    msg.includes("we're sorry") ||
+    msg.includes('internal error') ||
+    msg.includes('aborted') ||
+    msg.includes('exceeded') ||             // quotas
+    msg.includes('service invoked too many times') ||
+    msg.includes('timeout') ||
+    msg.includes('temporarily unavailable') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('connection')
+  );
+}
+
+2) Wrap your entrypoint to avoid overlaps
+
+function myFunction() {
+  const lock = LockService.getScriptLock();
+  if (!tryAcquireLock(lock, 20000)) {               // wait up to 20s
+    console.warn('Could not acquire script lock — exiting to avoid overlap.');
+    return;
+  }
+  try {
+    return mainJob();                                // put real work here
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function tryAcquireLock(lock, timeoutMs) {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    try { lock.tryLock(5000); return true; }         // waits up to 5s
+    catch (e) { Utilities.sleep(400); }
+  }
+  return false;
+}
+
+3) Use retries around every I/O call
+
+Examples (adjust IDs/names):
+
+function mainJob() {
+  // Open once
+  const ss = withRetry(() => SpreadsheetApp.openById('PUT_SHEET_ID'));
+  const sheet = ss.getSheetByName('Data');
+
+  // Batch reads
+  const lastRow = withRetry(() => sheet.getLastRow());
+  if (lastRow < 2) return;
+
+  const range = sheet.getRange(2, 1, lastRow - 1, 6);
+  const values = withRetry(() => range.getValues());
+
+  // ... process values in memory ...
+
+  // Batch write
+  withRetry(() => range.setValues(values));
+  SpreadsheetApp.flush();
+}
+
+// Example: external API
+function fetchJson(url, options) {
+  const res = withRetry(() => UrlFetchApp.fetch(url, options));
+  return JSON.parse(res.getContentText('utf-8'));
+}
+
+// Example: script properties for checkpoints
+function getProp(key, def='') {
+  const props = PropertiesService.getScriptProperties();
+  return withRetry(() => props.getProperty(key)) ?? def;
+}
+function setProp(key, val) {
+  const props = PropertiesService.getScriptProperties();
+  return withRetry(() => props.setProperty(key, String(val)));
+}
+
+Trigger hygiene (fixes most flakiness)
+	•	Ensure only one time-based trigger points at myFunction. Duplicate triggers happen more than you’d think.
+	•	Use a slightly odd cadence (e.g., every 7 or 11 minutes) instead of on-the-5s; it avoids platform contention.
+	•	If your run can exceed the interval, lengthen the interval or split the work with checkpoints (PropertiesService) so each run does a chunk.
+
+Performance & quotas tips
+	•	Batch sheet operations (getValues/setValues)—never loop getValue()/setValue() per cell.
+	•	Minimize SpreadsheetApp.flush() (only after a big write).
+	•	For large loops hitting UrlFetchApp, add a tiny Utilities.sleep(50-150) per request to smooth bursts.
+	•	Cache read-only data in CacheService for a few minutes to reduce I/O.
+	•	Prefer Sheets Advanced Service (batchUpdate) for heavy write patterns.
+
+Observability
+	•	Add console.log at phase boundaries; you’ll see where retries happen.
+	•	After installing the changes, Run > myFunction once to warm permissions and confirm no prompts.
+	•	In Executions (Apps Script dashboard), confirm that failures drop to zero or that retries absorb the occasional hiccup.
+
+Optional “safety valve”
+
+If completion is critical, add a “catch-up” time trigger that runs later and only proceeds if a property flag (e.g., RUN_DONE=0/1) indicates a missed/failed earlier run—still guarded by the same LockService so you never double-run.
+
+⸻
+
+If you paste the current myFunction (or describe what it touches—Sheets/Drive/API), I’ll wrap the exact calls with withRetry, add chunking/checkpoints if needed, and return a ready-to-replace version.
