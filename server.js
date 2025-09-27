@@ -95,14 +95,19 @@ function guard(secretEnvKey) {
 function adminGuard(req, res, next) {
   const adminToken = process.env.ADMIN_TOKEN;
   if (!adminToken) {
-    return res.status(500).json({ ok: false, error: "Admin access not configured" });
+    // In production, fail fast on missing admin token
+    if (process.env.NODE_ENV === 'production') {
+      console.error('CRITICAL: ADMIN_TOKEN required in production');
+      process.exit(1);
+    }
+    return res.status(403).json({ ok: false, error: "Admin access disabled" });
   }
   
   const authHeader = req.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   
   if (!token || token !== adminToken) {
-    return res.status(401).json({ ok: false, error: "Unauthorized - invalid admin token" });
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
   
   next();
