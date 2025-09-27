@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AskNewton Webhook Server - Replay Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e293b, #334155);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid #334155;
+        }
+        
+        .header h1 {
+            color: #f1f5f9;
+            font-size: 2em;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            color: #94a3b8;
+            font-size: 1.1em;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3b82f6;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.9em;
+        }
+        
+        .controls {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .button:hover {
+            background: #2563eb;
+        }
+        
+        .button.danger {
+            background: #dc2626;
+        }
+        
+        .button.danger:hover {
+            background: #b91c1c;
+        }
+        
+        .button.success {
+            background: #059669;
+        }
+        
+        .button.success:hover {
+            background: #047857;
+        }
+        
+        .button:disabled {
+            background: #64748b;
+            cursor: not-allowed;
+        }
+        
+        .input {
+            background: #0f172a;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: #e2e8f0;
+            margin-right: 8px;
+        }
+        
+        .table-container {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+        
+        th {
+            background: #334155;
+            color: #f1f5f9;
+            font-weight: 600;
+        }
+        
+        .status-failed {
+            color: #f87171;
+        }
+        
+        .status-retry {
+            color: #fbbf24;
+        }
+        
+        .status-pending {
+            color: #60a5fa;
+        }
+        
+        .status-ok {
+            color: #34d399;
+        }
+        
+        .checkbox {
+            margin-right: 8px;
+        }
+        
+        .error-message {
+            background: #7f1d1d;
+            border: 1px solid #dc2626;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .timestamp {
+            color: #94a3b8;
+            font-size: 0.9em;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #94a3b8;
+            padding: 40px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            color: #94a3b8;
+            padding: 40px;
+        }
+        
+        .alert {
+            background: #065f46;
+            border: 1px solid #059669;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+            color: #d1fae5;
+        }
+        
+        .alert.error {
+            background: #7f1d1d;
+            border-color: #dc2626;
+            color: #fecaca;
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 12px; }
+            .header { padding: 16px; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .button { margin-bottom: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎛️ Webhook Replay Dashboard</h1>
+            <p>Manage failed webhook deliveries and monitor delivery queue health</p>
+        </div>
+        
+        <div id="stats" class="stats-grid">
+            <!-- Stats loaded dynamically -->
+        </div>
+        
+        <div class="controls">
+            <h3 style="margin-bottom: 16px;">Queue Management</h3>
+            <button class="button success" onclick="loadData()">🔄 Refresh Data</button>
+            <button class="button" onclick="replaySelected()">🚀 Replay Selected</button>
+            <button class="button" onclick="replayAll()">🚀 Replay All Failed</button>
+            <button class="button danger" onclick="selectAll()">☑️ Select All</button>
+            <button class="button" onclick="clearSelection()">❌ Clear Selection</button>
+            <br><br>
+            <input type="text" class="input" id="filterInput" placeholder="Filter by destination, event ID, or error..." onkeyup="filterTable()">
+        </div>
+        
+        <div id="alerts"></div>
+        
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Select</th>
+                        <th>Event ID</th>
+                        <th>Destination</th>
+                        <th>Status</th>
+                        <th>Attempts</th>
+                        <th>Last Error</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="failedTable">
+                    <tr>
+                        <td colspan="8" class="loading">Loading failed deliveries...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let adminToken = '';
+        let failedDeliveries = [];
+        
+        // Get admin token (you'll need to set this)
+        function initAuth() {
+            adminToken = localStorage.getItem('adminToken') || prompt('Enter Admin Token:');
+            if (adminToken) {
+                localStorage.setItem('adminToken', adminToken);
+                loadData();
+            }
+        }
+        
+        async function apiCall(endpoint, options = {}) {
+            const response = await fetch(endpoint, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${adminToken}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+            
+            if (response.status === 401) {
+                localStorage.removeItem('adminToken');
+                initAuth();
+                return;
+            }
+            
+            return response.json();
+        }
+        
+        async function loadData() {
+            try {
+                showAlert('Loading data...', 'info');
+                
+                const [queueData, healthData] = await Promise.all([
+                    apiCall('/admin/queue'),
+                    apiCall('/health/resilience')
+                ]);
+                
+                updateStats(queueData.stats, healthData);
+                updateTable(queueData.failed);
+                clearAlert();
+                
+            } catch (error) {
+                showAlert('Failed to load data: ' + error.message, 'error');
+            }
+        }
+        
+        function updateStats(stats, health) {
+            const statsHtml = `
+                <div class="stat-card">
+                    <div class="stat-value">${stats.failed}</div>
+                    <div class="stat-label">Failed Deliveries</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.retry}</div>
+                    <div class="stat-label">Pending Retries</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${stats.ok}</div>
+                    <div class="stat-label">Successful</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${health.breakers.filter(b => b.state === 'OPEN').length}</div>
+                    <div class="stat-label">Open Breakers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${health.metrics.retry_exhausted}</div>
+                    <div class="stat-label">Exhausted Retries</div>
+                </div>
+            `;
+            document.getElementById('stats').innerHTML = statsHtml;
+        }
+        
+        function updateTable(failed) {
+            failedDeliveries = failed;
+            
+            if (failed.length === 0) {
+                document.getElementById('failedTable').innerHTML = `
+                    <tr>
+                        <td colspan="8" class="empty-state">
+                            🎉 No failed deliveries! Your webhook server is running smoothly.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            const tableHtml = failed.map(item => `
+                <tr data-id="${item.id}">
+                    <td><input type="checkbox" class="checkbox" value="${item.id}"></td>
+                    <td>${item.event_id}</td>
+                    <td><span class="status-${item.destination}">${item.destination}</span></td>
+                    <td><span class="status-failed">failed</span></td>
+                    <td>${item.attempts}</td>
+                    <td>
+                        <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;" title="${item.last_error}">
+                            ${item.last_error || 'No error details'}
+                        </div>
+                    </td>
+                    <td class="timestamp">${new Date(item.created_at).toLocaleString()}</td>
+                    <td>
+                        <button class="button" onclick="replaySingle('${item.id}')">🚀 Retry</button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            document.getElementById('failedTable').innerHTML = tableHtml;
+        }
+        
+        function filterTable() {
+            const filter = document.getElementById('filterInput').value.toLowerCase();
+            const rows = document.querySelectorAll('#failedTable tr[data-id]');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(filter) ? '' : 'none';
+            });
+        }
+        
+        function selectAll() {
+            document.querySelectorAll('.checkbox').forEach(cb => cb.checked = true);
+        }
+        
+        function clearSelection() {
+            document.querySelectorAll('.checkbox').forEach(cb => cb.checked = false);
+        }
+        
+        async function replaySingle(id) {
+            try {
+                showAlert(`Replaying delivery ${id}...`, 'info');
+                await apiCall(`/admin/replay-failed`, {
+                    method: 'POST',
+                    body: JSON.stringify({ ids: [id] })
+                });
+                showAlert('Replay initiated successfully!', 'success');
+                setTimeout(loadData, 2000); // Refresh after delay
+            } catch (error) {
+                showAlert('Replay failed: ' + error.message, 'error');
+            }
+        }
+        
+        async function replaySelected() {
+            const selected = Array.from(document.querySelectorAll('.checkbox:checked')).map(cb => cb.value);
+            if (selected.length === 0) {
+                showAlert('No items selected', 'error');
+                return;
+            }
+            
+            try {
+                showAlert(`Replaying ${selected.length} deliveries...`, 'info');
+                await apiCall('/admin/replay-failed', {
+                    method: 'POST',
+                    body: JSON.stringify({ ids: selected })
+                });
+                showAlert(`Replay initiated for ${selected.length} deliveries!`, 'success');
+                setTimeout(loadData, 2000);
+            } catch (error) {
+                showAlert('Replay failed: ' + error.message, 'error');
+            }
+        }
+        
+        async function replayAll() {
+            if (!confirm('Replay ALL failed deliveries? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                showAlert('Replaying all failed deliveries...', 'info');
+                await apiCall('/admin/replay-failed', {
+                    method: 'POST',
+                    body: JSON.stringify({})
+                });
+                showAlert('Replay initiated for all failed deliveries!', 'success');
+                setTimeout(loadData, 3000);
+            } catch (error) {
+                showAlert('Replay failed: ' + error.message, 'error');
+            }
+        }
+        
+        function showAlert(message, type = 'info') {
+            const alertClass = type === 'error' ? 'alert error' : type === 'success' ? 'alert' : 'alert';
+            document.getElementById('alerts').innerHTML = `
+                <div class="${alertClass}">
+                    ${type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️'} ${message}
+                </div>
+            `;
+        }
+        
+        function clearAlert() {
+            document.getElementById('alerts').innerHTML = '';
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadData, 30000);
+        
+        // Initialize
+        initAuth();
+    </script>
+</body>
+</html>

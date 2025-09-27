@@ -8,6 +8,9 @@ import { enqueue, workerLoop, stopWorker, replayFailed, getQueueStats } from "./
 import { breakerStates } from "./lib/outbound.js";
 import { withRetry } from "./lib/resilience.js";
 import * as metrics from "./lib/metrics.js";
+import { startChaos, stopChaos, getChaosStatus, stopAllChaos } from "./lib/chaos.js";
+import { alertManager, startAlerting, stopAlerting } from "./lib/alerting.js";
+import { rateLimiter } from "./lib/rate-limiter.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -149,6 +152,8 @@ initDb()
     console.log("SQLite ready");
     // Start queue worker
     workerLoop(db, { tickMs: 1500 });
+    // Start alerting monitor
+    startAlerting(30000); // Check every 30 seconds
   })
   .catch((err) => {
     console.error("DB init failed:", err);
@@ -282,6 +287,11 @@ app.get("/events/ui", adminGuard, (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "events.html"));
 });
 
+// --- Replay Dashboard UI - Protected ---
+app.get("/admin/replay", adminGuard, (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "replay-dashboard.html"));
+});
+
 // --- Replay by id (reads full body from DB) - Protected ---
 app.post("/events/replay/:id", adminGuard, async (req, res) => {
   const { id } = req.params;
@@ -332,6 +342,134 @@ app.get("/admin/queue", adminGuard, async (req, res) => {
   }
 });
 
+// --- Alerting Management - Protected ---
+app.get("/admin/alerts", adminGuard, async (req, res) => {
+  try {
+    const status = alertManager.getStatus();
+    res.json({ ok: true, alerting: status });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/admin/alerts/rule/:name", adminGuard, async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { enabled } = req.body;
+    
+    const success = alertManager.setRuleEnabled(name, enabled);
+    if (success) {
+      res.json({ ok: true, rule: name, enabled });
+    } else {
+      res.status(404).json({ ok: false, error: "Rule not found" });
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/admin/alerts/test/:rule", adminGuard, async (req, res) => {
+  try {
+    const { rule } = req.params;
+    // Force trigger an alert for testing
+    const testAlert = {
+      rule: `test_${rule}`,
+      metric: 'test_metric',
+      value: 999,
+      threshold: 1,
+      message: `🧪 TEST ALERT: ${rule} triggered manually`,
+      timestamp: Date.now(),
+      channels: ['slack']
+    };
+    
+    await alertManager.sendAlert(testAlert);
+    res.json({ ok: true, testAlert });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- Rate Limiting Management - Protected ---
+app.get("/admin/rate-limits", adminGuard, async (req, res) => {
+  try {
+    const status = rateLimiter.getStatus();
+    res.json({ ok: true, rateLimits: status });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/admin/rate-limits/:destination", adminGuard, async (req, res) => {
+  try {
+    const { destination } = req.params;
+    const { capacity, refillRate, refillPeriodMs = 1000 } = req.body;
+    
+    if (!capacity || !refillRate) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "capacity and refillRate are required" 
+      });
+    }
+    
+    rateLimiter.setRateLimit(destination, capacity, refillRate, refillPeriodMs);
+    const status = rateLimiter.getDestinationStatus(destination);
+    
+    res.json({ ok: true, destination, config: status });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get("/admin/rate-limits/:destination", adminGuard, async (req, res) => {
+  try {
+    const { destination } = req.params;
+    const status = rateLimiter.getDestinationStatus(destination);
+    res.json({ ok: true, status });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- Chaos Engineering Endpoints - Protected ---
+app.get("/admin/chaos", adminGuard, async (req, res) => {
+  try {
+    const status = getChaosStatus();
+    res.json({ ok: true, chaos: status });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/admin/chaos/start", adminGuard, async (req, res) => {
+  try {
+    const { scenario, duration = 60000 } = req.body;
+    if (!scenario) {
+      return res.status(400).json({ ok: false, error: "Scenario name required" });
+    }
+    
+    const result = await startChaos(scenario, duration);
+    res.json({ ok: true, result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/admin/chaos/stop", adminGuard, async (req, res) => {
+  try {
+    const { scenario } = req.body;
+    
+    if (scenario) {
+      const result = await stopChaos(scenario);
+      res.json({ ok: true, result });
+    } else {
+      const results = await stopAllChaos();
+      res.json({ ok: true, results });
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // --- Enhanced Prometheus Metrics ---
 app.get("/metrics", (_req, res) => {
   res.type("text/plain").send(metrics.getPrometheusMetrics());
@@ -349,6 +487,7 @@ app.use((err, req, res, _next) => {
 process.on('SIGTERM', async () => {
   console.log('🛑 Shutting down gracefully...');
   stopWorker();
+  stopAlerting();
   setTimeout(() => {
     console.log('💥 Force exit');
     process.exit(0);
@@ -358,6 +497,7 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('🛑 Shutting down gracefully...');
   stopWorker();
+  stopAlerting();
   setTimeout(() => {
     console.log('💥 Force exit');
     process.exit(0);
@@ -369,4 +509,5 @@ app.listen(PORT, () => {
   console.log(`📊 Health: http://localhost:${PORT}/health/resilience`);
   console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
   console.log(`🎛️  Admin: http://localhost:${PORT}/admin/queue`);
+  console.log(`🚀 Replay Dashboard: http://localhost:${PORT}/admin/replay`);
 });
