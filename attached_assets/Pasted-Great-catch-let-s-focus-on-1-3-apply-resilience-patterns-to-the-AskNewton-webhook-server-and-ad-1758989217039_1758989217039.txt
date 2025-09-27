@@ -1,0 +1,498 @@
+Great catch—let’s focus on #1 + #3: apply resilience patterns to the AskNewton webhook server and adapt them to your current error-handling. Below is a copy-paste upgrade set for your Node/Express server (works with your existing SQLite/WAL + Slack alerts + Prometheus counters).
+
+I’m keeping it dependency-light (no new packages). If you already use axios, you can keep it; otherwise the native fetch path below is fine.
+
+⸻
+
+1) Drop-in utilities (retry, circuit breaker, timeouts, jitter)
+
+Create lib/resilience.js:
+
+// lib/resilience.js
+class CircuitBreaker {
+  constructor({
+    failureThreshold = 5,       // consecutive failures to OPEN
+    successThreshold = 2,       // successes in HALF_OPEN to CLOSE
+    cooldownMs = 20_000,        // how long to stay OPEN
+    name = 'default',
+    onOpen = () => {},
+    onHalfOpen = () => {},
+    onClose = () => {},
+  } = {}) {
+    this.name = name;
+    this.failureThreshold = failureThreshold;
+    this.successThreshold = successThreshold;
+    this.cooldownMs = cooldownMs;
+
+    this.state = 'CLOSED';
+    this.failures = 0;
+    this.successes = 0;
+    this.nextAttemptAt = 0;
+
+    this.onOpen = onOpen;
+    this.onHalfOpen = onHalfOpen;
+    this.onClose = onClose;
+  }
+
+  canRequest() {
+    if (this.state === 'CLOSED') return true;
+    const now = Date.now();
+    if (this.state === 'OPEN' && now >= this.nextAttemptAt) {
+      this.state = 'HALF_OPEN';
+      this.successes = 0;
+      this.onHalfOpen(this);
+      return true;
+    }
+    return this.state === 'HALF_OPEN';
+  }
+
+  recordSuccess() {
+    if (this.state === 'CLOSED') return;
+    if (this.state === 'HALF_OPEN') {
+      this.successes++;
+      if (this.successes >= this.successThreshold) {
+        this._close();
+      }
+    }
+  }
+
+  recordFailure() {
+    if (this.state === 'HALF_OPEN') {
+      // immediate OPEN on failure in half-open
+      return this._open();
+    }
+    this.failures++;
+    if (this.failures >= this.failureThreshold) {
+      this._open();
+    }
+  }
+
+  _open() {
+    this.state = 'OPEN';
+    this.nextAttemptAt = Date.now() + this.cooldownMs;
+    this.failures = 0;
+    this.successes = 0;
+    this.onOpen(this);
+  }
+
+  _close() {
+    this.state = 'CLOSED';
+    this.failures = 0;
+    this.successes = 0;
+    this.onClose(this);
+  }
+
+  getState() {
+    return { name: this.name, state: this.state, nextAttemptAt: this.nextAttemptAt };
+  }
+}
+
+function defaultTransientCheck(err) {
+  const msg = (err && (err.message || err.toString()) || '').toLowerCase();
+  return (
+    msg.includes('timeout') ||
+    msg.includes('econnreset') ||
+    msg.includes('fetch failed') ||
+    msg.includes('temporarily unavailable') ||
+    msg.includes('internal server error') ||
+    msg.includes('bad gateway') ||
+    msg.includes('service unavailable') ||
+    msg.includes('gateway timeout') ||
+    msg.includes('rate limit') ||
+    msg.includes('throttle')
+  );
+}
+
+async function withRetry(fn, {
+  attempts = 5,
+  baseMs = 250,
+  factor = 2.0,
+  jitter = true,
+  isTransient = defaultTransientCheck,
+  onRetry = (err, i, delay) => console.warn(`[retry] #${i+1} in ${delay}ms: ${err && err.message}`)
+} = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const isLast = i === attempts - 1;
+      if (!isTransient(err) || isLast) throw err;
+      const delay = Math.round(baseMs * Math.pow(factor, i) * (jitter ? (0.5 + Math.random()) : 1));
+      onRetry(err, i, delay);
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+  throw lastErr;
+}
+
+function deadlineSignal(ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(`Timeout after ${ms}ms`), ms);
+  // caller should clearTimeout via finally if needed; here we rely on GC after abort
+  return ctrl;
+}
+
+function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+module.exports = { CircuitBreaker, withRetry, defaultTransientCheck, deadlineSignal, sleep };
+
+
+⸻
+
+2) Outbound delivery wrapper (breaker + retry + timeout)
+
+Create lib/outbound.js:
+
+// lib/outbound.js
+const { CircuitBreaker, withRetry, deadlineSignal } = require('./resilience');
+
+const breakers = {
+  zapier: new CircuitBreaker({ name: 'zapier', failureThreshold: 4, successThreshold: 2, cooldownMs: 15_000 }),
+  hubspot: new CircuitBreaker({ name: 'hubspot', failureThreshold: 4, successThreshold: 2, cooldownMs: 20_000 }),
+  elevenlabs: new CircuitBreaker({ name: 'elevenlabs', failureThreshold: 4, successThreshold: 2, cooldownMs: 20_000 }),
+};
+
+function getBreaker(dest) {
+  return breakers[dest] || (breakers[dest] = new CircuitBreaker({ name: dest }));
+}
+
+async function postJson({ url, dest = 'generic', body, headers = {}, timeoutMs = 8000, fetchImpl }) {
+  const breaker = getBreaker(dest);
+  if (!breaker.canRequest()) {
+    const err = new Error(`[breaker:${dest}] OPEN`);
+    err.code = 'CIRCUIT_OPEN';
+    throw err;
+  }
+
+  const doFetch = async () => {
+    const controller = deadlineSignal(timeoutMs);
+    try {
+      const res = await (fetchImpl || fetch)(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        const e = new Error(`HTTP ${res.status} ${res.statusText} ${txt}`.trim());
+        e.status = res.status;
+        throw e;
+      }
+      breaker.recordSuccess();
+      return res.json().catch(() => ({}));
+    } catch (err) {
+      breaker.recordFailure();
+      throw err;
+    }
+  };
+
+  return withRetry(doFetch, {
+    attempts: 5,
+    baseMs: 300,
+    factor: 2.2,
+    jitter: true,
+  });
+}
+
+function breakerStates() {
+  return Object.values(breakers).map(b => b.getState());
+}
+
+module.exports = { postJson, breakerStates };
+
+
+⸻
+
+3) DB tables for durable retries & DLQ
+
+Add a table to persist attempts and a DLQ (adjust names to match your DB wrapper). SQL:
+
+-- migrations/004_outbound_attempts.sql
+CREATE TABLE IF NOT EXISTS outbound_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL,
+  destination TEXT NOT NULL,            -- 'zapier' | 'hubspot' | 'elevenlabs' | etc.
+  url TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL,                 -- 'pending' | 'ok' | 'retry' | 'failed'
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  next_attempt_at INTEGER NOT NULL,     -- epoch ms
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbound_pending ON outbound_attempts(status, next_attempt_at);
+
+
+⸻
+
+4) Enqueue → Worker → DLQ flow
+
+Create lib/queue.js:
+
+// lib/queue.js
+const { postJson } = require('./outbound');
+const { sleep } = require('./resilience');
+const db = require('../db'); // your existing sqlite wrapper
+
+const MAX_ATTEMPTS = 8;
+
+function now() { return Date.now(); }
+
+function backoffMs(attempt) {
+  // Expo backoff with jitter, cap 5 min
+  const base = 400 * Math.pow(2, attempt);
+  const jitter = base * (0.5 + Math.random());
+  return Math.min(5 * 60_000, base + jitter);
+}
+
+async function enqueue({ eventId, dest, url, payload }) {
+  const ts = now();
+  await db.run(
+    `INSERT INTO outbound_attempts (event_id, destination, url, payload, status, attempts, next_attempt_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)`,
+    [eventId, dest, url, JSON.stringify(payload), ts, ts, ts]
+  );
+}
+
+async function _fetchBatch(limit = 20) {
+  const ts = now();
+  return db.all(
+    `SELECT * FROM outbound_attempts
+     WHERE status IN ('pending','retry') AND next_attempt_at <= ?
+     ORDER BY next_attempt_at ASC
+     LIMIT ?`,
+    [ts, limit]
+  );
+}
+
+async function _attempt(row) {
+  const payload = JSON.parse(row.payload);
+  try {
+    await postJson({
+      url: row.url,
+      dest: row.destination,
+      body: payload,
+      timeoutMs: 8000
+    });
+    await db.run(
+      `UPDATE outbound_attempts SET status='ok', updated_at=? WHERE id=?`,
+      [now(), row.id]
+    );
+  } catch (err) {
+    const attempts = row.attempts + 1;
+    const nAttemptAt = now() + backoffMs(attempts);
+    const status = attempts >= MAX_ATTEMPTS ? 'failed' : 'retry';
+    await db.run(
+      `UPDATE outbound_attempts SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=? WHERE id=?`,
+      [status, attempts, String(err && err.message || err), nAttemptAt, now(), row.id]
+    );
+  }
+}
+
+let _running = false;
+
+async function workerLoop({ tickMs = 1000 } = {}) {
+  if (_running) return;
+  _running = true;
+  try {
+    while (_running) {
+      const batch = await _fetchBatch(25);
+      if (batch.length === 0) {
+        await sleep(tickMs);
+        continue;
+      }
+      for (const row of batch) {
+        await _attempt(row);
+      }
+    }
+  } finally {
+    _running = false;
+  }
+}
+
+function stopWorker() { _running = false; }
+
+async function replayFailed(idList = []) {
+  if (!idList.length) return 0;
+  const ts = now();
+  let count = 0;
+  for (const id of idList) {
+    const row = await db.get(`SELECT * FROM outbound_attempts WHERE id=?`, [id]);
+    if (!row || row.status !== 'failed') continue;
+    await db.run(
+      `UPDATE outbound_attempts SET status='retry', next_attempt_at=?, updated_at=? WHERE id=?`,
+      [ts, ts, id]
+    );
+    count++;
+  }
+  return count;
+}
+
+module.exports = { enqueue, workerLoop, stopWorker, replayFailed };
+
+
+⸻
+
+5) Wire it into your existing server
+
+In server.js (or wherever you handle incoming events):
+
+// server.js (snippets)
+const express = require('express');
+const app = express();
+app.use(express.json({ limit: '2mb' }));
+
+const { enqueue, workerLoop, stopWorker, replayFailed } = require('./lib/queue');
+const { breakerStates } = require('./lib/outbound');
+const db = require('./db'); // your sqlite wrapper
+
+// ENTRY: accept inbound event (idempotency already in your codebase)
+app.post('/events', async (req, res) => {
+  try {
+    const { id: eventId, destination, url, payload } = req.body;
+
+    // 1) persist inbound event (you already do this)
+    // await db.saveEvent(...)
+
+    // 2) enqueue durable outbound delivery
+    await enqueue({ eventId, dest: destination, url, payload });
+
+    res.status(202).json({ ok: true, queued: true });
+  } catch (err) {
+    console.error('enqueue failed', err);
+    res.status(500).json({ ok: false, error: String(err && err.message || err) });
+  }
+});
+
+// HEALTH/METRICS ENHANCEMENT
+app.get('/health/resilience', async (_req, res) => {
+  const breakers = breakerStates();
+  const pending = await db.get(`SELECT COUNT(*) as c FROM outbound_attempts WHERE status IN ('pending','retry')`);
+  const failed = await db.get(`SELECT COUNT(*) as c FROM outbound_attempts WHERE status='failed'`);
+  res.json({
+    breakers,
+    queue: { pending: pending.c, failed: failed.c },
+    time: new Date().toISOString()
+  });
+});
+
+// Admin: replay failed by ids
+app.post('/admin/replay', async (req, res) => {
+  const { ids = [] } = req.body;
+  const n = await replayFailed(ids);
+  res.json({ ok: true, replayed: n });
+});
+
+// Start worker
+workerLoop({ tickMs: 1000 });
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Shutting down worker...');
+  stopWorker();
+  setTimeout(() => process.exit(0), 1500);
+});
+
+
+⸻
+
+6) Prometheus counters (minimal)
+
+Add to your metrics module:
+
+// metrics.js (augment existing)
+let counters = {
+  outbound_ok: 0,
+  outbound_retry: 0,
+  outbound_failed: 0,
+  circuit_open: 0
+};
+
+function inc(name) { counters[name] = (counters[name] || 0) + 1; }
+function snapshot() { return { ...counters }; }
+
+module.exports = { inc, snapshot };
+
+And increment inside queue.js attempts (optional—if you already have counters, map accordingly):
+
+// inside _attempt success path
+const metrics = require('../metrics');
+metrics.inc('outbound_ok');
+
+// inside catch path
+if (status === 'retry') metrics.inc('outbound_retry');
+if (status === 'failed') metrics.inc('outbound_failed');
+
+Also, in outbound.js when a breaker opens:
+
+const metrics = require('../metrics');
+// in CircuitBreaker._open():
+this.onOpen(this);
+// add: metrics.inc('circuit_open');   // if you wire the callback to do so
+
+
+⸻
+
+7) Rate limiting (token bucket) per destination (optional add)
+
+If a destination rate-limits you, throttle sends:
+
+// lib/ratelimit.js
+class TokenBucket {
+  constructor({ ratePerSec = 5, burst = 10 } = {}) {
+    this.capacity = burst;
+    this.tokens = burst;
+    this.ratePerSec = ratePerSec;
+    this.last = Date.now();
+  }
+  async take() {
+    while (true) {
+      const now = Date.now();
+      const delta = (now - this.last) / 1000;
+      this.last = now;
+      this.tokens = Math.min(this.capacity, this.tokens + delta * this.ratePerSec);
+      if (this.tokens >= 1) {
+        this.tokens -= 1;
+        return;
+      }
+      const waitMs = Math.ceil((1 - this.tokens) / this.ratePerSec * 1000);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+}
+
+module.exports = { TokenBucket };
+
+Use in queue.js around _attempt:
+
+const { TokenBucket } = require('./ratelimit');
+const buckets = {
+  zapier: new TokenBucket({ ratePerSec: 3, burst: 6 }),
+  hubspot: new TokenBucket({ ratePerSec: 2, burst: 4 })
+};
+
+async function _attempt(row) {
+  const bucket = buckets[row.destination];
+  if (bucket) await bucket.take();
+  // ... proceed with postJson()
+}
+
+
+⸻
+
+8) What this gives you
+	•	Transient-error immunity: exponential backoff + jitter on every outbound call.
+	•	Blast radius control: per-destination circuit breakers with half-open probing.
+	•	Durable delivery: queue + retry + DLQ in SQLite; failures are not lost.
+	•	Observability: breaker states + queue counts at /health/resilience, plus simple counters.
+	•	Graceful shutdown: worker stops cleanly on SIGTERM for container/replit restarts.
+	•	Throttling (optional): token bucket per destination to avoid rate-limit storms.
+
+⸻
+
+If you’d like, I can also fold this into a single Replit “one-paste” patch against your current server.js/db.js layout. Otherwise, drop these files in, run your migrations, and you’re set.
