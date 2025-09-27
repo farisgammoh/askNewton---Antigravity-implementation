@@ -4,45 +4,50 @@ import fetch from "node-fetch";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initDb, insertEvent, listEvents, getEventById } from "./db.js";
+import { enqueue, workerLoop, stopWorker, replayFailed, getQueueStats } from "./lib/queue.js";
+import { breakerStates } from "./lib/outbound.js";
+import { withRetry } from "./lib/resilience.js";
+import * as metrics from "./lib/metrics.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MAX_EVENTS_COUNTER_ONLY = 200; // used for metrics only (DB stores all)
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Slack Alert ---
+// --- Enhanced Slack Alert with Resilience ---
 async function sendSlackAlert(message) {
   const webhook = process.env.SLACK_WEBHOOK_URL;
   if (!webhook) return;
+  
   try {
-    await fetch(webhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: message })
+    await withRetry(async () => {
+      const res = await fetch(webhook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: message }),
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!res.ok) throw new Error(`Slack API error: ${res.status}`);
+    }, {
+      attempts: 3,
+      baseMs: 200,
+      onRetry: (err, i, delay) => console.warn(`[slack] Retry ${i+1} in ${delay}ms: ${err.message}`)
     });
   } catch (err) {
-    console.error("Slack alert failed:", err.message);
+    console.error("Slack alert failed after retries:", err.message);
+    metrics.inc('errors_total');
   }
 }
 
 // --- Raw body for HMAC ---
 app.use(express.json({
-  limit: "1mb",
+  limit: "2mb",
   verify: (req, _res, buf) => { req.rawBody = buf; }
 }));
 
 // --- Static assets for UI ---
 app.use("/public", express.static(path.join(__dirname, "public")));
-
-// --- Metrics (counters only; events now persisted in DB) ---
-const metrics = {
-  events_total: 0,
-  duplicates_total: 0,
-  invalid_signature_total: 0,
-  errors_total: 0
-};
 
 // --- HMAC verification ---
 const SIG_HEADERS = [
@@ -74,12 +79,12 @@ function guard(secretEnvKey) {
     const secret = process.env[secretEnvKey];
     if (!secret) {
       sendSlackAlert(`🚨 Missing secret: ${secretEnvKey}`);
-      metrics.errors_total++;
+      metrics.inc('errors_total');
       return res.status(500).json({ ok: false, error: `${secretEnvKey} missing` });
     }
     if (!verifyHmac(req, secret)) {
       sendSlackAlert(`⚠️ Invalid signature on ${req.path}`);
-      metrics.invalid_signature_total++;
+      metrics.inc('invalid_signature_total');
       return res.status(401).json({ ok: false, error: "Invalid signature" });
     }
     next();
@@ -87,62 +92,89 @@ function guard(secretEnvKey) {
 }
 
 // --- Business processing stub (extend as needed) ---
-async function processEvent({ type, body }) {
-  // TODO: push to queue / forward to AskNewton app asynchronously
-  return { processed: true, type };
+async function processEvent({ type, body, eventId }, db) {
+  // TODO: Add your business logic here
+  console.log(`[process] Processing ${type} event: ${eventId}`);
+  
+  // Example: enqueue outbound deliveries for processed events
+  if (process.env.SLACK_WEBHOOK_URL) {
+    await enqueue(db, {
+      eventId,
+      dest: 'slack',
+      url: process.env.SLACK_WEBHOOK_URL,
+      payload: {
+        text: `📥 Processed ${type} event: ${eventId}`,
+        blocks: [{
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Event Type:* ${type}\n*Event ID:* ${eventId}\n*Timestamp:* ${new Date().toISOString()}`
+          }
+        }]
+      }
+    });
+    metrics.inc('queue_enqueued');
+  }
+  
+  return { processed: true, type, eventId };
 }
 
 // === DB init ===
 let db;
 initDb()
-  .then((d) => { db = d; console.log("SQLite ready"); })
+  .then((d) => { 
+    db = d; 
+    console.log("SQLite ready");
+    // Start queue worker
+    workerLoop(db, { tickMs: 1500 });
+  })
   .catch((err) => {
     console.error("DB init failed:", err);
     process.exit(1);
   });
 
-// --- DB-backed idempotency + record ---
-async function recordIfNew({ id, type, path, body }) {
-  // Attempt insert (INSERT OR IGNORE). If exists, treat as duplicate.
-  await insertEvent(db, { id, type, path, body });
-  // Check whether it exists now (it always will) but we need to detect duplicate:
-  const row = await getEventById(db, id);
-  // If ts is within ~1s and metrics bump happened twice? Simpler: count duplicates by trying a second insert?
-  // We'll detect duplicate by checking if request body had an id AND insertion didn't increase events_total.
-  // For counters, we'll look up whether row.ts is very recent AND we just processed same id after another within same runtime.
-  // Practical approach: we increment events_total only when we **process**; duplicates return flag to caller.
-  return row; // Always returns row; caller decides if duplicate based on prior existence if needed
-}
-
-// Helper: attempts to insert and tells if it was duplicate via changes()
+// Helper: attempts to insert and tells if it was duplicate
 async function insertOrDetectDuplicate({ id, type, path, body }) {
-  // Try a manual check first — duplicates are when ID already exists
   const existing = await getEventById(db, id);
   if (existing) return { duplicate: true };
-
   await insertEvent(db, { id, type, path, body });
   return { duplicate: false };
 }
 
-// --- Webhooks ---
+// --- Enhanced Webhooks with Resilience ---
 app.post("/webhooks/eleven/conversation-init",
   guard("ELEVEN_INIT_SECRET"),
   async (req, res) => {
     const id = req.body?.id || req.body?.event_id || `init-${Date.now()}`;
-    const { duplicate } = await insertOrDetectDuplicate({
-      id, type: "conversation-init", path: req.path, body: req.body
-    });
+    
+    try {
+      const { duplicate } = await insertOrDetectDuplicate({
+        id, type: "conversation-init", path: req.path, body: req.body
+      });
 
-    if (duplicate) {
-      metrics.duplicates_total++;
-      return res.json({ ok: true, duplicate: true });
+      if (duplicate) {
+        metrics.inc('duplicates_total');
+        return res.json({ ok: true, duplicate: true });
+      }
+
+      metrics.inc('events_total');
+      
+      // Process event with resilience
+      processEvent({ 
+        type: "conversation-init", 
+        body: req.body, 
+        eventId: id 
+      }, db).catch(err => {
+        metrics.inc('errors_total');
+        sendSlackAlert(`🔥 Processing error (init): ${err.message}`);
+      });
+      
+      res.json({ ok: true, eventId: id });
+    } catch (err) {
+      console.error('Webhook error:', err);
+      metrics.inc('errors_total');
+      res.status(500).json({ ok: false, error: 'Processing failed' });
     }
-
-    metrics.events_total++;
-    processEvent({ type: "conversation-init", body: req.body }).catch(err => {
-      metrics.errors_total++; sendSlackAlert(`🔥 Processing error (init): ${err.message}`);
-    });
-    res.json({ ok: true });
   }
 );
 
@@ -150,40 +182,80 @@ app.post("/webhooks/eleven/conversation-end",
   guard("ELEVEN_END_SECRET"),
   async (req, res) => {
     const id = req.body?.id || req.body?.event_id || `end-${Date.now()}`;
-    const { duplicate } = await insertOrDetectDuplicate({
-      id, type: "conversation-end", path: req.path, body: req.body
-    });
+    
+    try {
+      const { duplicate } = await insertOrDetectDuplicate({
+        id, type: "conversation-end", path: req.path, body: req.body
+      });
 
-    if (duplicate) {
-      metrics.duplicates_total++;
-      return res.json({ ok: true, duplicate: true });
+      if (duplicate) {
+        metrics.inc('duplicates_total');
+        return res.json({ ok: true, duplicate: true });
+      }
+
+      metrics.inc('events_total');
+      
+      // Process event with resilience
+      processEvent({ 
+        type: "conversation-end", 
+        body: req.body, 
+        eventId: id 
+      }, db).catch(err => {
+        metrics.inc('errors_total');
+        sendSlackAlert(`🔥 Processing error (end): ${err.message}`);
+      });
+      
+      res.json({ ok: true, eventId: id });
+    } catch (err) {
+      console.error('Webhook error:', err);
+      metrics.inc('errors_total');
+      res.status(500).json({ ok: false, error: 'Processing failed' });
     }
-
-    metrics.events_total++;
-    processEvent({ type: "conversation-end", body: req.body }).catch(err => {
-      metrics.errors_total++; sendSlackAlert(`🔥 Processing error (end): ${err.message}`);
-    });
-    res.json({ ok: true });
   }
 );
 
 // --- Health / Version ---
 app.get("/healthz", (_req, res) => res.json({ ok: true, service: "asknewton-webhooks" }));
-app.get("/version", (_req, res) => res.json({ version: "1.2.0" }));
+app.get("/version", (_req, res) => res.json({ version: "1.3.0" }));
+
+// --- Enhanced Health Check for Resilience ---
+app.get("/health/resilience", async (_req, res) => {
+  try {
+    const breakers = breakerStates();
+    const queueStats = await getQueueStats(db);
+    const metricsSnapshot = metrics.snapshot();
+    
+    res.json({
+      ok: true,
+      breakers,
+      queue: queueStats,
+      metrics: metricsSnapshot,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Health check error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // --- JSON Events API (DB-backed) ---
 app.get("/events", async (req, res) => {
   const { type, q, limit = "100" } = req.query;
   try {
-    const items = await listEvents(db, { type: type ? String(type) : undefined, q: q ? String(q) : undefined, limit: String(limit) });
+    const items = await listEvents(db, { 
+      type: type ? String(type) : undefined, 
+      q: q ? String(q) : undefined, 
+      limit: String(limit) 
+    });
     res.json({ count: items.length, items });
   } catch (err) {
-    metrics.errors_total++; sendSlackAlert(`🔥 /events error: ${err.message}`);
+    metrics.inc('errors_total');
+    sendSlackAlert(`🔥 /events error: ${err.message}`);
     res.status(500).json({ ok: false, error: "DB error" });
   }
 });
 
-// --- Pretty UI for Events (unchanged) ---
+// --- Pretty UI for Events ---
 app.get("/events/ui", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "events.html"));
 });
@@ -194,42 +266,85 @@ app.post("/events/replay/:id", async (req, res) => {
   try {
     const evt = await getEventById(db, id);
     if (!evt) return res.status(404).json({ ok: false, error: "Not found" });
-    const result = await processEvent({ type: evt.type, body: JSON.parse(evt.body) });
+    
+    const result = await processEvent({ 
+      type: evt.type, 
+      body: JSON.parse(evt.body),
+      eventId: evt.id 
+    }, db);
+    
     res.json({ ok: true, replayed: id, result });
   } catch (err) {
-    metrics.errors_total++; sendSlackAlert(`🔥 Replay error ${id}: ${err.message}`);
+    metrics.inc('errors_total');
+    sendSlackAlert(`🔥 Replay error ${id}: ${err.message}`);
     res.status(500).json({ ok: false, error: "Replay failed" });
   }
 });
 
-// --- Prometheus metrics (unchanged) ---
-app.get("/metrics", (_req, res) => {
-  res.type("text/plain").send(
-    [
-      "# HELP asknewton_events_total Total accepted events",
-      "# TYPE asknewton_events_total counter",
-      `asknewton_events_total ${metrics.events_total}`,
-      "# HELP asknewton_duplicates_total Total duplicate events",
-      "# TYPE asknewton_duplicates_total counter",
-      `asknewton_duplicates_total ${metrics.duplicates_total}`,
-      "# HELP asknewton_invalid_signature_total Invalid signature attempts",
-      "# TYPE asknewton_invalid_signature_total counter",
-      `asknewton_invalid_signature_total ${metrics.invalid_signature_total}`,
-      "# HELP asknewton_errors_total Processing/server errors",
-      "# TYPE asknewton_errors_total counter",
-      `asknewton_errors_total ${metrics.errors_total}`
-    ].join("\n")
-  );
+// --- Admin: Replay failed queue items ---
+app.post("/admin/replay-failed", async (req, res) => {
+  try {
+    const { ids = [] } = req.body;
+    const count = await replayFailed(db, ids);
+    res.json({ ok: true, replayed: count });
+  } catch (err) {
+    metrics.inc('errors_total');
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// --- Error handler ---
+// --- Admin: Queue management ---
+app.get("/admin/queue", async (req, res) => {
+  try {
+    const stats = await getQueueStats(db);
+    const failed = await db.all(`
+      SELECT id, event_id, destination, attempts, last_error, created_at 
+      FROM outbound_attempts 
+      WHERE status = 'failed' 
+      ORDER BY created_at DESC 
+      LIMIT 50
+    `);
+    res.json({ stats, failed });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// --- Enhanced Prometheus Metrics ---
+app.get("/metrics", (_req, res) => {
+  res.type("text/plain").send(metrics.getPrometheusMetrics());
+});
+
+// --- Error handler with resilience ---
 app.use((err, req, res, _next) => {
   console.error("Unhandled error:", err);
-  metrics.errors_total++;
+  metrics.inc('errors_total');
   sendSlackAlert(`🔥 Error on ${req.path}: ${err.message}`);
   res.status(500).json({ ok: false, error: "Server error" });
 });
 
+// --- Graceful shutdown ---
+process.on('SIGTERM', async () => {
+  console.log('🛑 Shutting down gracefully...');
+  stopWorker();
+  setTimeout(() => {
+    console.log('💥 Force exit');
+    process.exit(0);
+  }, 2000);
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 Shutting down gracefully...');
+  stopWorker();
+  setTimeout(() => {
+    console.log('💥 Force exit');
+    process.exit(0);
+  }, 2000);
+});
+
 app.listen(PORT, () => {
-  console.log(`asknewton-webhooks listening on :${PORT}`);
+  console.log(`🚀 asknewton-webhooks v1.3.0 listening on :${PORT}`);
+  console.log(`📊 Health: http://localhost:${PORT}/health/resilience`);
+  console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
+  console.log(`🎛️  Admin: http://localhost:${PORT}/admin/queue`);
 });
