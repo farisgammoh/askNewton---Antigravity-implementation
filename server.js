@@ -91,6 +91,23 @@ function guard(secretEnvKey) {
   };
 }
 
+// Admin/Events authentication guard
+function adminGuard(req, res, next) {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (!adminToken) {
+    return res.status(500).json({ ok: false, error: "Admin access not configured" });
+  }
+  
+  const authHeader = req.get('authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  if (!token || token !== adminToken) {
+    return res.status(401).json({ ok: false, error: "Unauthorized - invalid admin token" });
+  }
+  
+  next();
+}
+
 // --- Business processing stub (extend as needed) ---
 async function processEvent({ type, body, eventId }, db) {
   // TODO: Add your business logic here
@@ -238,8 +255,8 @@ app.get("/health/resilience", async (_req, res) => {
   }
 });
 
-// --- JSON Events API (DB-backed) ---
-app.get("/events", async (req, res) => {
+// --- JSON Events API (DB-backed) - Protected ---
+app.get("/events", adminGuard, async (req, res) => {
   const { type, q, limit = "100" } = req.query;
   try {
     const items = await listEvents(db, { 
@@ -255,13 +272,13 @@ app.get("/events", async (req, res) => {
   }
 });
 
-// --- Pretty UI for Events ---
-app.get("/events/ui", (_req, res) => {
+// --- Pretty UI for Events - Protected ---
+app.get("/events/ui", adminGuard, (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "events.html"));
 });
 
-// --- Replay by id (reads full body from DB) ---
-app.post("/events/replay/:id", async (req, res) => {
+// --- Replay by id (reads full body from DB) - Protected ---
+app.post("/events/replay/:id", adminGuard, async (req, res) => {
   const { id } = req.params;
   try {
     const evt = await getEventById(db, id);
@@ -281,8 +298,8 @@ app.post("/events/replay/:id", async (req, res) => {
   }
 });
 
-// --- Admin: Replay failed queue items ---
-app.post("/admin/replay-failed", async (req, res) => {
+// --- Admin: Replay failed queue items - Protected ---
+app.post("/admin/replay-failed", adminGuard, async (req, res) => {
   try {
     const { ids = [] } = req.body;
     const count = await replayFailed(db, ids);
@@ -293,8 +310,8 @@ app.post("/admin/replay-failed", async (req, res) => {
   }
 });
 
-// --- Admin: Queue management ---
-app.get("/admin/queue", async (req, res) => {
+// --- Admin: Queue management - Protected ---
+app.get("/admin/queue", adminGuard, async (req, res) => {
   try {
     const stats = await getQueueStats(db);
     const failed = await db.all(`
