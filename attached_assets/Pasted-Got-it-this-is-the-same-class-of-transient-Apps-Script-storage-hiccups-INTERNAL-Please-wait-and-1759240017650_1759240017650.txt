@@ -1,0 +1,142 @@
+Got it—this is the same class of transient Apps Script/storage hiccups (“INTERNAL”, “Please wait and try again”). You can fix it the same way we hardened the other script: lock to avoid overlaps, add retries with exponential backoff around every storage/I/O call, and checkpoint progress so a mid-run failure can resume.
+
+Here’s a drop-in, copy-paste hardening shell for your AskNewton_Lead_Notifier:
+
+/** ---------- drop in once (top of file) ---------- **/
+function withRetry(fn, opts = {}) {
+  const {
+    attempts = 6, baseMs = 400, factor = 2.0, jitter = true,
+    isTransient = defaultTransientCheck,
+    onRetry = (err, i, delay) => console.warn(`Retry #${i+1} in ${delay}ms: ${err && err.message}`)
+  } = opts;
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return fn(); }
+    catch (err) {
+      lastErr = err;
+      if (!isTransient(err) || i === attempts - 1) throw err;
+      const delay = Math.round(baseMs * Math.pow(factor, i) * (jitter ? (0.5 + Math.random()) : 1));
+      onRetry(err, i, delay); Utilities.sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
+function defaultTransientCheck(err) {
+  const msg = String(err && err.message || '').toLowerCase();
+  return (
+    msg.includes("we're sorry") ||
+    msg.includes('internal') ||        // “INTERNAL” / storage
+    msg.includes('aborted') ||
+    msg.includes('exceeded') ||
+    msg.includes('service invoked too many times') ||
+    msg.includes('timeout') ||
+    msg.includes('temporarily unavailable') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('connection')
+  );
+}
+
+function tryAcquireLock(timeoutMs = 20000) {
+  const lock = LockService.getScriptLock();
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    try { lock.tryLock(5000); return lock; }  // waits up to 5s
+    catch (e) { Utilities.sleep(400); }
+  }
+  return null;
+}
+/** ---------- end helpers ---------- **/
+
+Wrap your entrypoint
+
+function myFunction() {
+  const lock = tryAcquireLock(20000);
+  if (!lock) { console.warn('No lock — exiting to avoid overlap.'); return; }
+  try {
+    return mainJob();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+Put your real work in mainJob() and wrap all I/O with retries
+
+Adjust IDs/names:
+
+function mainJob() {
+  const SHEET_ID = 'PUT_YOUR_SHEET_ID';
+  const SHEET_NAME = 'Leads';
+  const props = PropertiesService.getScriptProperties();
+
+  // Open once, with retry
+  const ss = withRetry(() => SpreadsheetApp.openById(SHEET_ID));
+  const sheet = ss.getSheetByName(SHEET_NAME);
+
+  // Figure out where to resume
+  const startRow = Number(withRetry(() => props.getProperty('LEADS_CURSOR') || 2)); // header row = 1
+  const lastRow = withRetry(() => sheet.getLastRow());
+  if (lastRow < startRow) return;
+
+  // Batch read
+  const range = sheet.getRange(startRow, 1, lastRow - startRow + 1, 8); // adjust column count
+  const values = withRetry(() => range.getValues());
+
+  // Process in-memory
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    // ... your business logic here (no per-cell I/O) ...
+
+    // Example: if you must write back a status column in memory:
+    // row[7] = 'NOTIFIED'; // 0-based inside values array
+    if ((i % 100) === 0) {
+      // checkpoint every 100 rows so a failure resumes near-here
+      const checkpointRow = startRow + i;
+      withRetry(() => props.setProperty('LEADS_CURSOR', String(checkpointRow)));
+    }
+  }
+
+  // Single batched write (if you changed values)
+  // withRetry(() => range.setValues(values));
+  // SpreadsheetApp.flush();
+
+  // Final checkpoint
+  withRetry(() => props.setProperty('LEADS_CURSOR', String(lastRow + 1)));
+}
+
+If you call external APIs (Slack, your webhook, etc.)
+
+Wrap those too:
+
+function postSlack(url, payload) {
+  const res = withRetry(() => UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  }));
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error('Slack HTTP ' + code + ': ' + res.getContentText());
+}
+
+
+⸻
+
+Trigger hygiene (do these once)
+	•	In Triggers, confirm there’s only one time-based trigger for myFunction.
+	•	Use a slightly odd cadence (e.g., every 7 minutes), not on-the-5s.
+	•	If the job duration can exceed the interval, increase the interval or rely on the checkpoint cursor.
+
+Spreadsheet/Drive best practices
+	•	Open by ID (openById) not by URL or name.
+	•	Batch: prefer getValues()/setValues() once over per-cell calls.
+	•	Avoid excessive SpreadsheetApp.flush()—only after a big write.
+	•	Keep headers/formatting static; don’t change spreadsheet structure at runtime.
+
+“INTERNAL / reading from storage” specifics
+
+These usually originate from Sheets/Drive/Properties reads in periods of platform blips. The retry wrapper + lock + batching above is the proven mitigation.
+
+⸻
+
+If you paste (or describe) what AskNewton_Lead_Notifier does—columns it reads/writes and any external calls—I’ll return a fully inlined version of your function with the retries, checkpoints, and minimal edits to your logic.
