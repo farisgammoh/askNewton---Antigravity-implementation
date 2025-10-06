@@ -20,12 +20,16 @@ AskNewton_Lead_Notifier reads new rows from a Google Sheet, sends optional notif
 - Choose `myFunction`, select a **time-based** schedule
 - Prefer an "odd" cadence (e.g., **every 7 minutes**) to avoid platform contention
 
-## How it's hardened
+## How it's hardened (v2 Enhanced)
 
 - **Locking**: Prevents overlapping runs (LockService)
 - **Retries**: Exponential backoff with jitter on all I/O (Sheets, Properties, UrlFetch)
 - **Checkpointing**: Stores the last processed row in ScriptProperties so a mid-run failure resumes where it left off
 - **Batching**: Single `getValues()` and `setValues()`; no per-cell loops
+- **Resilient sheet reopening**: Handles stale storage handles by reopening sheets after errors
+- **Safe property access**: Graceful fallback if ScriptProperties encounters transient errors
+- **Start jitter**: 1-3 second random delay to avoid contention with other triggers
+- **Smaller chunks**: Processes 150 rows max per run with checkpoints every 25 rows for stability
 
 ## Operations
 
@@ -51,6 +55,8 @@ const CONFIG = {
   CURSOR_KEY: 'LEADS_CURSOR',             // Property name for checkpoint
   SLACK_WEBHOOK_URL: '',                  // Slack webhook (optional)
   NOTIFY_STATUS_COL_INDEX: 8,             // Column for "NOTIFIED" status
+  CHUNK_ROWS: 150,                        // Max rows per run (v2: tuned for stability)
+  CHECKPOINT_EVERY: 25,                   // Checkpoint frequency (v2: faster checkpoints)
 };
 ```
 
@@ -63,12 +69,39 @@ const CONFIG = {
 
 The script processes rows starting from row 2, updates the Status column, and checkpoints progress.
 
+## Performance Tuning
+
+If you experience persistent errors during platform instability:
+
+### Reduce chunk size (temporary)
+```javascript
+CONFIG.CHUNK_ROWS = 100;  // Process fewer rows per run
+CONFIG.CHECKPOINT_EVERY = 20;  // Checkpoint more frequently
+```
+
+### Adjust trigger timing
+- Use odd intervals (e.g., every 7 or 11 minutes)
+- Avoid top-of-hour schedules when Google platform load is high
+- If errors persist in bursts, temporarily increase interval to 15 minutes
+
+### Monitor execution
+```javascript
+// The script logs processing time - watch for patterns:
+// "Processed 150 rows in 2500ms" (normal)
+// "Processed 150 rows in 8000ms" (platform slowdown)
+```
+
 ## Troubleshooting
 
 ### "INTERNAL" or "Please wait and try again" errors
-- These are transient Google platform issues
+- These are transient Google platform issues (often from Sheets/Properties storage)
+- **v2 enhancements** specifically handle these by:
+  - Reopening sheet handles when they become stale
+  - Safe property access with fallback defaults
+  - Smaller chunks (150 rows) to reduce storage load
+  - More frequent checkpoints (every 25 rows) to minimize lost work
 - The retry logic automatically handles them with exponential backoff
-- Check execution logs to see retry attempts
+- Check execution logs to see retry attempts and handle refreshes
 
 ### Script runs but nothing happens
 - Verify `SHEET_ID` is correct

@@ -1,10 +1,11 @@
 /***********************
- * AskNewton_Lead_Notifier (Hardened)
+ * AskNewton_Lead_Notifier (Hardened v2)
  * - Locking to prevent overlaps
  * - Exponential backoff retries (I/O)
  * - Checkpoint cursor to resume safely
  * - Batched sheet reads/writes
  * - Optional Slack notify with retry
+ * - v2: Resilient sheet reopening, props handling, start jitter, smaller chunks
  ***********************/
 
 const CONFIG = {
@@ -16,6 +17,8 @@ const CONFIG = {
   CURSOR_KEY: 'LEADS_CURSOR',             // property key for checkpoint
   SLACK_WEBHOOK_URL: '',                  // optional: paste Slack webhook URL
   NOTIFY_STATUS_COL_INDEX: 8,             // 1-based column index to write status (e.g., "NOTIFIED")
+  CHUNK_ROWS: 150,                        // max rows per run (tuned for stability)
+  CHECKPOINT_EVERY: 25,                   // checkpoint frequency (tuned for rough conditions)
 };
 
 /** ---------- Resilience helpers ---------- **/
@@ -65,11 +68,33 @@ function tryAcquireLock(timeoutMs = 20000) {
   return null;
 }
 
+/** ---------- v2: Resilient sheet + props helpers ---------- **/
+function reopenSheet_(sheetId, sheetName) {
+  return withRetry(() => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const sh = ss.getSheetByName(sheetName);
+    if (!sh) throw new Error(`Sheet "${sheetName}" not found`);
+    return sh;
+  });
+}
+
+function getPropSafe_(key, def) {
+  const props = PropertiesService.getScriptProperties();
+  try { return withRetry(() => props.getProperty(key)) ?? def; }
+  catch (e) { return def; } // fall back if props storage hiccups
+}
+
+function setPropSafe_(key, val) {
+  const props = PropertiesService.getScriptProperties();
+  return withRetry(() => props.setProperty(key, String(val)));
+}
+
 /** ---------- Entrypoint (trigger target) ---------- **/
 function myFunction() {
   const lock = tryAcquireLock(20000);
   if (!lock) { console.warn('No lock — exiting to avoid overlap.'); return; }
   try {
+    Utilities.sleep(1000 + Math.floor(Math.random() * 2000)); // jitter to avoid contention
     mainJob();
   } finally {
     lock.releaseLock();
@@ -78,61 +103,62 @@ function myFunction() {
 
 /** ---------- Main job ---------- **/
 function mainJob() {
-  const p = PropertiesService.getScriptProperties();
-
-  // Open spreadsheet & sheet with retries
-  const ss = withRetry(() => SpreadsheetApp.openById(CONFIG.SHEET_ID));
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
-  if (!sheet) throw new Error(`Sheet "${CONFIG.SHEET_NAME}" not found`);
-
-  // Determine work window
+  const startTs = Date.now();
   const headerRow = CONFIG.HEADER_ROW;
-  const startRow = Number(withRetry(() => p.getProperty(CONFIG.CURSOR_KEY) || (headerRow + 1)));
-  const lastRow = withRetry(() => sheet.getLastRow());
-  if (lastRow < startRow) {
-    console.log('No new rows to process.');
-    return;
-  }
 
-  const numRows = lastRow - startRow + 1;
-  const range = sheet.getRange(startRow, CONFIG.START_COL, numRows, CONFIG.COL_COUNT);
+  // Reopen sheet handle resiliently (avoids stale storage handles)
+  let sheet = reopenSheet_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME);
+
+  // Cursor with resilient props access
+  const cursor = Number(getPropSafe_(CONFIG.CURSOR_KEY, headerRow + 1));
+
+  const lastRow = withRetry(() => sheet.getLastRow());
+  if (lastRow < cursor) { console.log('No new rows.'); return; }
+
+  const rowsRemaining = lastRow - cursor + 1;
+  const numRows = Math.min(rowsRemaining, CONFIG.CHUNK_ROWS);
+
+  // If a storage error happens mid-run, we can re-get the handle:
+  const range = withRetry(() => sheet.getRange(cursor, CONFIG.START_COL, numRows, CONFIG.COL_COUNT));
   const values = withRetry(() => range.getValues());
 
-  // === YOUR LOGIC HERE ===
-  // Assume columns: [ts, name, phone, email, source, note, assignedTo, status]
-  // Modify as needed. Keep processing in-memory; avoid per-cell I/O.
-  const statusIdx = CONFIG.NOTIFY_STATUS_COL_INDEX - 1; // convert to 0-based
+  const statusIdx = CONFIG.NOTIFY_STATUS_COL_INDEX - 1;
+
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
-    const email = String(row[3] || '').trim(); // example: email at col 4
-    const name  = String(row[1] || '').trim();
 
-    // Example: only notify new leads where status is blank
     if (!row[statusIdx]) {
-      // Optional Slack notification
       if (CONFIG.SLACK_WEBHOOK_URL) {
-        const payload = {
-          text: `🆕 New lead: ${name || 'Unknown'} ${email ? `(${email})` : ''}`
-        };
-        postSlack(CONFIG.SLACK_WEBHOOK_URL, payload); // wrapped in retry
+        postSlack(CONFIG.SLACK_WEBHOOK_URL, {
+          text: `🆕 New lead: ${String(row[1]||'Unknown')} ${row[3] ? '('+row[3]+')' : ''}`
+        });
       }
-      // mark as notified in-memory
       row[statusIdx] = 'NOTIFIED';
     }
 
-    // checkpoint every 100 rows
-    if (i > 0 && i % 100 === 0) {
-      const checkpointRow = startRow + i;
-      withRetry(() => p.setProperty(CONFIG.CURSOR_KEY, String(checkpointRow)));
+    if (i > 0 && (i % CONFIG.CHECKPOINT_EVERY) === 0) {
+      const checkpointRow = cursor + i;
+      setPropSafe_(CONFIG.CURSOR_KEY, checkpointRow);
+      // if we hit storage weirdness, refresh the handle before continuing
+      sheet = reopenSheet_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME);
     }
   }
 
-  // Single batched write if we changed anything
-  withRetry(() => range.setValues(values));
+  // Batched write with handle refresh fallback
+  try {
+    withRetry(() => range.setValues(values));
+  } catch (e) {
+    // If range became invalid due to a transient, re-open and rewrite just this chunk
+    sheet = reopenSheet_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME);
+    const retryRange = withRetry(() => sheet.getRange(cursor, CONFIG.START_COL, numRows, CONFIG.COL_COUNT));
+    withRetry(() => retryRange.setValues(values));
+  }
   SpreadsheetApp.flush();
 
-  // Final checkpoint moves cursor beyond last processed row
-  withRetry(() => p.setProperty(CONFIG.CURSOR_KEY, String(lastRow + 1)));
+  setPropSafe_(CONFIG.CURSOR_KEY, cursor + numRows);
+  
+  const elapsed = Date.now() - startTs;
+  console.log(`Processed ${numRows} rows in ${elapsed}ms`);
 }
 
 /** ---------- Optional: Slack notify with retry ---------- **/
@@ -151,8 +177,7 @@ function postSlack(url, payload) {
 
 /** ---------- Utilities ---------- **/
 function resetCursor() {
-  const p = PropertiesService.getScriptProperties();
   const startRow = CONFIG.HEADER_ROW + 1;
-  withRetry(() => p.setProperty(CONFIG.CURSOR_KEY, String(startRow)));
+  setPropSafe_(CONFIG.CURSOR_KEY, startRow);
   console.log('Cursor reset to row ' + startRow);
 }

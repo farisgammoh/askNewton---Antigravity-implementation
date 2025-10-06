@@ -1,0 +1,123 @@
+Thanks for the log. Those two are the same transient/storage hiccups again (“INTERNAL” + “Please wait and try again”). Your hardened script is already close; let’s add a tiny v2 patch that makes it even more forgiving under Google blips:
+
+What I’m changing (quick + safe)
+	1.	Re-open the spreadsheet on storage errors (sometimes the handle goes stale).
+	2.	Retry PropertiesService (the “INTERNAL” often comes from props, not just Sheets).
+	3.	Small random start jitter to avoid contention with other time-based jobs.
+	4.	Slightly smaller chunk + quicker checkpoints for rough periods.
+
+Drop-in patch (add/replace these bits)
+
+1) Wrap open + props with resilient helpers
+
+// Add near top with other helpers:
+function reopenSheet_(sheetId, sheetName) {
+  return withRetry(() => {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const sh = ss.getSheetByName(sheetName);
+    if (!sh) throw new Error(`Sheet "${sheetName}" not found`);
+    return sh;
+  });
+}
+
+function getPropSafe_(key, def) {
+  const props = PropertiesService.getScriptProperties();
+  try { return withRetry(() => props.getProperty(key)) ?? def; }
+  catch (e) { return def; } // fall back if props storage hiccups
+}
+
+function setPropSafe_(key, val) {
+  const props = PropertiesService.getScriptProperties();
+  return withRetry(() => props.setProperty(key, String(val)));
+}
+
+2) Add a tiny random jitter at start (1–3 seconds)
+
+function myFunction() {
+  const lock = tryAcquireLock(20000);
+  if (!lock) { console.warn('No lock — exiting to avoid overlap.'); return; }
+  try {
+    Utilities.sleep(1000 + Math.floor(Math.random() * 2000)); // jitter
+    mainJob();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+3) Nudge config for rough conditions
+
+// Tune for stability (you can revert later)
+CONFIG.CHUNK_ROWS = Math.min(CONFIG.CHUNK_ROWS || 250, 150);
+CONFIG.CHECKPOINT_EVERY = Math.min(CONFIG.CHECKPOINT_EVERY || 50, 25);
+
+4) Use the resilient open + prop helpers inside mainJob()
+
+Replace the first part of mainJob() with:
+
+function mainJob() {
+  const startTs = Date.now();
+  const headerRow = CONFIG.HEADER_ROW;
+
+  // Reopen sheet handle resiliently (avoids stale storage handles)
+  let sheet = reopenSheet_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME);
+
+  // Cursor with resilient props access
+  const cursor = Number(getPropSafe_(CONFIG.CURSOR_KEY, headerRow + 1));
+
+  const lastRow = withRetry(() => sheet.getLastRow());
+  if (lastRow < cursor) { console.log('No new rows.'); return; }
+
+  const rowsRemaining = lastRow - cursor + 1;
+  const numRows = Math.min(rowsRemaining, CONFIG.CHUNK_ROWS);
+
+  // If a storage error happens mid-run, we can re-get the handle:
+  const range = withRetry(() => sheet.getRange(cursor, CONFIG.START_COL, numRows, CONFIG.COL_COUNT));
+  const values = withRetry(() => range.getValues());
+
+  const statusIdx = CONFIG.NOTIFY_STATUS_COL_INDEX - 1;
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+
+    if (!row[statusIdx]) {
+      if (CONFIG.SLACK_WEBHOOK_URL) {
+        postSlack(CONFIG.SLACK_WEBHOOK_URL, {
+          text: `🆕 New lead: ${String(row[1]||'Unknown')} ${row[3] ? '('+row[3]+')' : ''}`
+        });
+      }
+      row[statusIdx] = 'NOTIFIED';
+    }
+
+    if (i > 0 && (i % CONFIG.CHECKPOINT_EVERY) === 0) {
+      const checkpointRow = cursor + i;
+      setPropSafe_(CONFIG.CURSOR_KEY, checkpointRow);
+      // if we hit storage weirdness, refresh the handle before continuing
+      sheet = reopenSheet_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME);
+    }
+  }
+
+  // Batched write with handle refresh fallback
+  try {
+    withRetry(() => range.setValues(values));
+  } catch (e) {
+    // If range became invalid due to a transient, re-open and rewrite just this chunk
+    sheet = reopenSheet_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME);
+    const retryRange = withRetry(() => sheet.getRange(cursor, CONFIG.START_COL, numRows, CONFIG.COL_COUNT));
+    withRetry(() => retryRange.setValues(values));
+  }
+  SpreadsheetApp.flush();
+
+  setPropSafe_(CONFIG.CURSOR_KEY, cursor + numRows);
+}
+
+Operational checklist (one-time)
+	•	Confirm there’s still only one time-based trigger for myFunction.
+	•	Keep the schedule on an odd interval (e.g., every 7 minutes).
+	•	If errors persist in bursts, temporarily drop CHUNK_ROWS to 100.
+
+Why this helps
+	•	“INTERNAL” often comes from stale storage handles (Sheets or Script Properties). Re-opening the sheet and retrying the property read/write usually clears it.
+	•	Start jitter + smaller chunks reduce contention with Google’s own maintenance windows and your other triggers.
+	•	Faster checkpoints mean less work is ever lost if a run aborts mid-flight.
+
+If you’d like, I can also add a tiny /health doGet() endpoint in Apps Script that returns the current cursor, lastRow, and last error message so you can monitor it quickly without opening the IDE.
