@@ -1,0 +1,45 @@
+Awesome—v3 sounds dialed in. Here’s a tight wrap-up so you can validate it’s rock solid and know what to do if anything blips.
+
+Quick smoke test (2 mins)
+	1.	Run once manually: In Apps Script → Run myFunction → confirm it processes a small chunk and advances the cursor.
+	2.	Health check:
+
+curl -s https://<your-web-app-url> | jq
+# expect: {"sheet":"Leads","cursor":<n>,"lastRow":<m>,"time":"..."}
+
+	3.	Failure simulation (optional): Temporarily put an invalid Slack URL and run again—verify it retries then still checkpoints and exits cleanly.
+
+What “good” looks like
+	•	Executions show short runs (a minute or less), no DEADLINE_EXCEEDED.
+	•	Cursor moves forward by ≤100 rows per run.
+	•	Health endpoint shows cursor steadily catching lastRow.
+	•	If Google hiccups, next run resumes without manual fixes.
+
+Tiny checklist (final polish)
+	•	Sheets API enabled: Services → “Google Sheets API” → Added (done).
+	•	Single trigger: One time-based trigger on myFunction every 7 min.
+	•	Hidden State sheet exists: A tab named State with A1 holding the cursor (it can be hidden).
+	•	CONFIG sanity: SHEET_ID, SHEET_NAME, COL_COUNT, NOTIFY_STATUS_COL_INDEX match your sheet.
+
+Alerts (optional but handy)
+
+If you want a simple “something’s wrong” alert without Prometheus:
+	•	Add a counter in PropertiesService (e.g., FAIL_STREAK).
+	•	On any caught error in myFunction, increment it; on success, reset to 0.
+	•	If FAIL_STREAK >= 3, send a Slack message with the error snippet and cursor/lastRow.
+
+Fast rollback lever
+
+If for any reason Sheets API becomes unavailable, you can flip back to the editor-layer calls by:
+	•	Temporarily swapping sheetsValuesUpdate_/Get_ to the earlier SpreadsheetApp version (you already have v2 code).
+	•	Keep dual state storage—that part’s universally helpful.
+
+Runbook (copy for your README)
+	•	Symptom: “INTERNAL” / “Please try again.”
+Action: Do nothing—v3 will retry via Advanced Service. Check health endpoint; next run should progress.
+	•	Symptom: Cursor not moving for >3 runs.
+Action: Lower CHUNK_ROWS to 60; ensure trigger is single; re-run myFunction.
+	•	Symptom: Slack failures only.
+Action: Verify webhook URL; the script will keep processing rows and mark status—no data loss.
+
+If you want, I can add a tiny “/debug” web endpoint to dump cursor, lastRow, and the last 3 log lines to speed up remote troubleshooting.

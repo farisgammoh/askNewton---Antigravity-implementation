@@ -262,8 +262,15 @@ function resetCursor() {
   console.log('Cursor reset to row ' + startRow);
 }
 
-/** ---------- v3: Health endpoint (deploy as web app) ---------- **/
-function doGet() {
+/** ---------- v3: Health & Debug endpoints (deploy as web app) ---------- **/
+function doGet(e) {
+  const path = e.parameter.path || 'health';
+  
+  if (path === 'debug') {
+    return doGetDebug_();
+  }
+  
+  // Default: health endpoint
   const cursor = State.getCursor();
   let lastRow = -1;
   try { lastRow = sheetsGetLastRow_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME); } catch (e) {}
@@ -274,5 +281,40 @@ function doGet() {
     pending: lastRow >= cursor ? (lastRow - cursor + 1) : 0,
     time: new Date().toISOString()
   });
+  return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGetDebug_() {
+  const props = PropertiesService.getScriptProperties();
+  const cursor = State.getCursor();
+  let lastRow = -1;
+  let stateSheetCursor = 'N/A';
+  let lastError = 'none';
+  
+  try { lastRow = sheetsGetLastRow_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME); } catch (e) { lastError = e.message; }
+  
+  try {
+    const v = sheetsValuesGet_(CONFIG.SHEET_ID, `${CONFIG.STATE_SHEET}!${CONFIG.STATE_RANGE}`);
+    stateSheetCursor = (v[0] && v[0][0]) ? v[0][0] : 'empty';
+  } catch (e) {}
+  
+  const body = JSON.stringify({
+    sheet: CONFIG.SHEET_NAME,
+    cursor,
+    lastRow,
+    pending: lastRow >= cursor ? (lastRow - cursor + 1) : 0,
+    config: {
+      chunkRows: CONFIG.CHUNK_ROWS,
+      checkpointEvery: CONFIG.CHECKPOINT_EVERY,
+      hasSlack: !!CONFIG.SLACK_WEBHOOK_URL
+    },
+    state: {
+      propertiesCursor: props.getProperty(CONFIG.CURSOR_KEY) || 'none',
+      stateSheetCursor: stateSheetCursor
+    },
+    lastError,
+    time: new Date().toISOString()
+  }, null, 2);
+  
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JSON);
 }
