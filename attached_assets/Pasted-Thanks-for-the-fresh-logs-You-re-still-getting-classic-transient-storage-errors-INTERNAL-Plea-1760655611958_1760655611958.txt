@@ -1,79 +1,25 @@
-/***********************
- * AskNewton_Lead_Notifier (Hardened v3)
- * - Locking to prevent overlaps
- * - Exponential backoff retries (I/O)
- * - Checkpoint cursor to resume safely
- * - v2: Resilient sheet reopening, props handling, start jitter
- * - v3: Sheets Advanced Service API, dual state storage, health endpoint
- ***********************/
+Thanks for the fresh logs. You’re still getting classic transient storage errors (“INTERNAL” / “Please try again”). Your v2 hardening is close; to squeeze out the remaining flakes, here’s a v3 patch that (a) avoids the flaky Apps Script “storage handle” as much as possible, (b) adds a second, more reliable state store, and (c) gives you a quick health endpoint.
 
-const CONFIG = {
-  SHEET_ID: 'PUT_YOUR_SHEET_ID_HERE',     // <-- REQUIRED
-  SHEET_NAME: 'Leads',                    // change if different
-  HEADER_ROW: 1,                          // 1-based header row
-  START_COL: 1,                           // first data col
-  COL_COUNT: 8,                           // number of columns to read/write
-  CURSOR_KEY: 'LEADS_CURSOR',             // property key for checkpoint
-  SLACK_WEBHOOK_URL: '',                  // optional: paste Slack webhook URL
-  NOTIFY_STATUS_COL_INDEX: 8,             // 1-based column index to write status (e.g., "NOTIFIED")
-  CHUNK_ROWS: 100,                        // smaller chunk for rough periods (v3)
-  CHECKPOINT_EVERY: 20,                   // more frequent checkpoints (v3)
-  STATE_SHEET: 'State',                   // fallback state tab (v3)
-  STATE_RANGE: 'A1',                      // cursor cell in State sheet (v3)
-  TIME_BUDGET_MS: 180000,                 // 3 min max execution time
-};
+Below is copy-paste code you can drop into your existing AskNewton_Lead_Notifier.gs. It keeps your current logic but routes I/O through more resilient paths and adds fallbacks.
 
-// Unified backoff options (slightly shorter to stay under time cap)
+⸻
+
+1) Use the Sheets Advanced Service for reads/writes (bypasses most editor-layer hiccups)
+
+In Apps Script: Services → “Google Sheets API” → Enable.
+
+/******** v3 hardening: storage-agnostic state + Sheets Advanced Service ********/
+
+// === CONFIG tweaks ===
+CONFIG.CHUNK_ROWS = 100;            // smaller chunk for rough periods
+CONFIG.CHECKPOINT_EVERY = 20;       // more frequent checkpoints
+CONFIG.STATE_SHEET = 'State';       // fallback state tab (created on first run)
+CONFIG.STATE_RANGE = 'A1';          // cursor cell in State sheet
+
+// unified backoff options (slightly shorter to stay under time cap)
 const RETRY_OPTS = { attempts: 5, baseMs: 300, factor: 2.0, jitter: true };
 
-/** ---------- Resilience helpers ---------- **/
-function withRetry(fn, opts = {}) {
-  const {
-    attempts = 6, baseMs = 400, factor = 2.0, jitter = true,
-    isTransient = defaultTransientCheck,
-    onRetry = (err, i, delay) => console.warn(`Retry #${i+1} in ${delay}ms: ${err && err.message}`)
-  } = opts;
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    try { return fn(); }
-    catch (err) {
-      lastErr = err;
-      if (!isTransient(err) || i === attempts - 1) throw err;
-      const delay = Math.round(baseMs * Math.pow(factor, i) * (jitter ? (0.5 + Math.random()) : 1));
-      onRetry(err, i, delay);
-      Utilities.sleep(delay);
-    }
-  }
-  throw lastErr;
-}
-
-function defaultTransientCheck(err) {
-  const msg = String(err && err.message || '').toLowerCase();
-  return (
-    msg.includes("we're sorry") ||
-    msg.includes('internal') ||
-    msg.includes('aborted') ||
-    msg.includes('exceeded') ||
-    msg.includes('service invoked too many times') ||
-    msg.includes('timeout') ||
-    msg.includes('temporarily unavailable') ||
-    msg.includes('failed to fetch') ||
-    msg.includes('connection') ||
-    msg.includes('rate limit')
-  );
-}
-
-function tryAcquireLock(timeoutMs = 20000) {
-  const lock = LockService.getScriptLock();
-  const until = Date.now() + timeoutMs;
-  while (Date.now() < until) {
-    try { lock.tryLock(5000); return lock; } // waits up to 5s
-    catch (e) { Utilities.sleep(400); }
-  }
-  return null;
-}
-
-/** ---------- v3: Sheets Advanced Service wrappers ---------- **/
+/** ---------- Low-level: Sheets Advanced Service wrappers ---------- **/
 function sheetsValuesGet_(spreadsheetId, rangeA1) {
   return withRetry(() => {
     const resp = Sheets.Spreadsheets.Values.get(spreadsheetId, rangeA1);
@@ -121,7 +67,7 @@ function sheetsGetLastRow_(sheetId, sheetName) {
   return 1; // only header
 }
 
-/** ---------- v3: State store with dual backends (Properties → Sheet) ---------- **/
+/** ---------- State store with dual backends (Properties → Sheet) ---------- **/
 const State = {
   getCursor() {
     // 1) try PropertiesService
@@ -161,7 +107,7 @@ function ensureStateSheet_() {
   }
 }
 
-/** ---------- Entrypoint (trigger target) ---------- **/
+/** ---------- Entry with small jitter + lock ---------- **/
 function myFunction() {
   const lock = tryAcquireLock(20000);
   if (!lock) { console.warn('No lock — exiting to avoid overlap.'); return; }
@@ -226,26 +172,9 @@ function mainJob_v3() {
   // Write entire processed chunk via Advanced Service
   sheetsValuesUpdate_(CONFIG.SHEET_ID, rangeA1, values);
   State.setCursor(cursor + numRows);
-  
-  const elapsed = Date.now() - startTs;
-  console.log(`Processed ${numRows} rows in ${elapsed}ms`);
 }
 
-/** ---------- Optional: Slack notify with retry ---------- **/
-function postSlack(url, payload) {
-  const res = withRetry(() => UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  }));
-  const code = res.getResponseCode();
-  if (code < 200 || code >= 300) {
-    throw new Error('Slack HTTP ' + code + ': ' + res.getContentText());
-  }
-}
-
-/** ---------- Utilities ---------- **/
+/** ---------- Utils ---------- **/
 function colLetter_(n) {
   let s = '';
   while (n > 0) {
@@ -256,23 +185,40 @@ function colLetter_(n) {
   return s;
 }
 
-function resetCursor() {
-  const startRow = CONFIG.HEADER_ROW + 1;
-  State.setCursor(startRow);
-  console.log('Cursor reset to row ' + startRow);
-}
 
-/** ---------- v3: Health endpoint (deploy as web app) ---------- **/
+⸻
+
+2) Optional: tiny /health endpoint (quick glance without opening IDE)
+
+Create a standalone web app in the same script if you like:
+
 function doGet() {
   const cursor = State.getCursor();
   let lastRow = -1;
   try { lastRow = sheetsGetLastRow_(CONFIG.SHEET_ID, CONFIG.SHEET_NAME); } catch (e) {}
   const body = JSON.stringify({
     sheet: CONFIG.SHEET_NAME,
-    cursor, 
-    lastRow,
-    pending: lastRow >= cursor ? (lastRow - cursor + 1) : 0,
+    cursor, lastRow,
     time: new Date().toISOString()
   });
   return ContentService.createTextOutput(body).setMimeType(ContentService.MimeType.JSON);
 }
+
+Deploy → “Execute as Me” → “Anyone with link” (or your domain). This is read-only status.
+
+⸻
+
+3) One-time hygiene checklist (quick)
+	•	Triggers: ensure only one time-based trigger on myFunction, run every 7 minutes (odd cadence).
+	•	Keep CHUNK_ROWS at 100 for now; bump later if stable.
+	•	If INTERNAL bursts continue, lower CHECKPOINT_EVERY to 10.
+
+⸻
+
+Why this solves your remaining flakes
+	•	Advanced Service calls (Sheets API) route around many editor-layer “storage handle” errors.
+	•	Dual state store (Properties → State sheet cell) means even if one backend blips, the other keeps you moving.
+	•	More frequent checkpoints + smaller chunks reduce the blast radius of any single hiccup.
+	•	Jitter avoids colliding with Google’s own scheduled maintenance/peak intervals.
+
+If you want, I can also add an auto-trigger installer that deletes duplicates and re-creates a single odd-cadence trigger, but the above should already knock out the intermittent “INTERNAL”s you’re seeing.
