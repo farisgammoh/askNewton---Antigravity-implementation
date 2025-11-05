@@ -1,0 +1,85 @@
+# Render.com Blueprint for AskNewton Society of Mind
+# Deploy with: render blueprint create
+# Or via Render dashboard: New Blueprint → Import from Git
+
+services:
+  # Society of Mind Gateway Service
+  - type: web
+    name: asknewton-society
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter # $7/month (upgrade to standard for production)
+    region: oregon # or ohio, frankfurt, singapore
+    branch: main
+    
+    # Health check configuration
+    healthCheckPath: /health
+    
+    # Environment variables
+    envVars:
+      - key: NODE_ENV
+        value: production
+      
+      - key: PORT
+        value: 4000
+      
+      - key: OPENAI_API_KEY
+        sync: false # Set manually in Render dashboard
+      
+      - key: API_KEYS
+        generateValue: true # Auto-generate secure API keys
+        sync: false
+      
+      - key: DATABASE_URL
+        fromDatabase:
+          name: asknewton-postgres
+          property: connectionString
+      
+      - key: REDIS_URL
+        fromService:
+          name: asknewton-redis
+          type: redis
+          property: connectionString
+      
+      # Optional: Plan data API
+      - key: COVERED_CA_API_KEY
+        sync: false
+    
+    # Auto-deploy on git push
+    autoDeploy: true
+    
+    # Scaling configuration
+    numInstances: 1 # Start with 1, scale up as needed
+    
+    # Build configuration
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+
+# Optional: Redis for caching and rate limiting
+# Uncomment to enable (adds ~$7/month)
+#  - type: redis
+#    name: asknewton-redis
+#    plan: starter
+#    maxmemoryPolicy: allkeys-lru
+#    ipAllowList: [] # Allow from anywhere (or restrict to your IPs)
+
+# Database (if not using existing Neon/Supabase)
+# Connect to existing database via DATABASE_URL instead
+#  - type: pstartgres
+#    name: asknewton-postgres
+#    plan: starter
+#    databaseName: asknewton_society
+#    databaseUser: asknewton
+#    ipAllowList: []
+
+# Background worker (optional - for BullMQ jobs)
+#  - type: worker
+#    name: asknewton-society-worker
+#    runtime: docker
+#    dockerfilePath: ./Dockerfile
+#    dockerContext: .
+#    plan: starter
+#    envVarsFrom:
+#      - asknewton-society
+#    startCommand: npm run worker

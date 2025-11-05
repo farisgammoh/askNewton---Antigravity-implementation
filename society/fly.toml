@@ -1,0 +1,56 @@
+# Fly.io configuration for AskNewton Society of Mind
+# Deploy with: fly deploy
+# Docs: https://fly.io/docs/
+
+app = "asknewton-society"
+primary_region = "sjc" # San Jose (or lax, ord, iad, fra)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080" # Fly requires internal port 8080
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+# Health check
+[[services.http_checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+# VM Resources
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+# Scaling
+[scaling]
+  min_count = 1
+  max_count = 5
+
+# Metrics
+[metrics]
+  port = 9091
+  path = "/metrics"
+
+# Secrets (set with: fly secrets set KEY=value)
+# fly secrets set OPENAI_API_KEY=sk-...
+# fly secrets set API_KEYS=key1,key2,key3
+# fly secrets set DATABASE_URL=postgresql://...
+# fly secrets set REDIS_URL=redis://...

@@ -2,6 +2,24 @@
 
 All notable changes to the AskNewton Society of Mind project.
 
+## [1.1.2] - 2025-01-07 - Deployment Ready
+
+### Added
+- **Dockerfile**: Multi-stage production build with security hardening
+- **Render.com Blueprint** (`render.yaml`): One-click deployment configuration
+- **Fly.io Configuration** (`fly.toml`): Optimized for auto-scaling
+- **Docker Compose** (`docker-compose.yml`): Local development stack
+- **Deployment Guide** (`DEPLOYMENT.md`): Complete deployment instructions for all platforms
+- BullMQ and IORedis dependencies for queue infrastructure
+- Extended metadata schema with routing_confidence and plan metrics
+
+### Changed
+- Updated .dockerignore for optimized image sizes
+- Added non-root user to Docker image for security
+- Health check configuration for all platforms
+
+---
+
 ## [1.1.1] - 2025-01-07 - Schema Validation Fix
 
 ### Fixed

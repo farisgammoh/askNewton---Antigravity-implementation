@@ -14,6 +14,9 @@ export const AgentResponse = z.object({
     model_used: z.string().optional(),
     tokens_used: z.number().optional(),
     retry_count: z.number().optional(),
+    routing_confidence: z.number().optional(),
+    plans_considered: z.number().optional(),
+    plans_returned: z.number().optional(),
     warnings: z.array(z.string()).optional()
   }).optional(),
   payload: z.any().optional(), // Agent-specific data (null for error responses)

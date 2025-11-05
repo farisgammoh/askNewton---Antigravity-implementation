@@ -1,0 +1,47 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# TypeScript
+*.tsbuildinfo
+dist
+
+# Development
+.env
+.env.local
+.env.development
+*.log
+
+# Testing
+coverage
+.nyc_output
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Documentation (keep for reference in image)
+# README.md
+# QUICKSTART.md
+# INTEGRATION.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Temporary files
+tmp
+temp
+*.tmp
