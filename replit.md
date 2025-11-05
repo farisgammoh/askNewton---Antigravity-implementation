@@ -48,6 +48,50 @@ The current implementation uses a simple session-based approach with minimal aut
 
 This lightweight approach aligns with the lead capture nature of the application.
 
+## Society of Mind Multi-Agent System
+
+AskNewton includes a production-ready "Society of Mind" architecture - a separate Express.js service (port 4000) that orchestrates specialized AI agents for different health insurance tasks. This TypeScript implementation provides intelligent, context-aware responses across multiple channels.
+
+**Architecture Components:**
+
+- **Gateway & Router**: Intent-based routing system with confidence scoring and extensible intent registry
+- **Agent SDK**: Unified `AgentResponse` contract ensuring consistent behavior across all agents
+- **Specialized Agents**:
+  - **Concierge Agent**: Conversational Q&A about health insurance (GPT-4o-mini)
+  - **Coverage Advisor**: Personalized 3-plan recommendations based on intake data
+  - **Claims Helper**: (Planned) Claims submission and status tracking
+  - **Benefits Navigator**: (Planned) Provider search and cost estimation
+
+**Production Hardening:**
+
+- **Error Handling**: Multi-layer retry logic with exponential backoff, timeout protection (30-45s), and graceful degradation
+- **Security**: API key authentication, rate limiting (60 req/min per IP), channel validation
+- **Response Format**: Standardized envelope with status, metadata, payload, and error fields
+- **Testing**: Comprehensive unit tests (7/7) and E2E integration tests (7/7) all passing
+- **LLM Integration**: Structured JSON output, timeout protection, fallback responses
+
+**Data Integration:**
+
+The system includes a comprehensive plan data integration strategy (PLAN_DATA_INTEGRATION.md) covering:
+- Covered California API integration
+- Database schema for plan storage with periodic sync
+- Redis caching layer for performance
+- pgvector semantic search for natural language queries
+
+**Intent Registry:**
+
+Extensible priority-based routing supports current and future agents:
+```typescript
+{
+  coverage_recommendation: { priority: 10, keywords: ['recommend', 'plan'], enabled: true },
+  concierge: { priority: 5, keywords: ['help', 'question'], enabled: true },
+  claims_helper: { priority: 8, enabled: false },
+  benefits_navigator: { priority: 7, enabled: false }
+}
+```
+
+**Deployment:** The Society service runs independently on port 4000, communicates via REST API, and can be integrated with the main AskNewton app for wizard-based plan recommendations, WhatsApp chat, or standalone agent interactions.
+
 # External Dependencies
 
 ## Third-Party Services
