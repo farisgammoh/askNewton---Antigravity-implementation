@@ -52,6 +52,8 @@ This lightweight approach aligns with the lead capture nature of the application
 
 AskNewton includes a production-ready "Society of Mind" architecture - a separate Express.js service (port 4000) that orchestrates specialized AI agents for different health insurance tasks. This TypeScript implementation provides intelligent, context-aware responses across multiple channels.
 
+**Status**: ✅ Production Ready v1.1.2 (January 2025)
+
 **Architecture Components:**
 
 - **Gateway & Router**: Intent-based routing system with confidence scoring and extensible intent registry
@@ -69,10 +71,30 @@ AskNewton includes a production-ready "Society of Mind" architecture - a separat
 - **Response Format**: Standardized envelope with status, metadata, payload, and error fields
 - **Testing**: Comprehensive unit tests (7/7) and E2E integration tests (7/7) all passing
 - **LLM Integration**: Structured JSON output, timeout protection, fallback responses
+- **Containerization**: Multi-stage Docker build with security hardening (non-root user, health checks)
+
+**Deployment Options:**
+
+- **Render.com**: One-click deployment via `render.yaml` blueprint ($7-14/mo)
+- **Fly.io**: Auto-scaling deployment via `fly.toml` config ($5-10/mo)
+- **Docker**: Self-hosted with `docker-compose.yml` for local/cloud deployment
+
+**Complete Documentation Suite:**
+
+All documentation is in the `society/` directory:
+- `README_FIRST.md` - Quick start guide (read this first!)
+- `DEPLOY_NOW.md` - Live deployment commands for Render/Fly.io
+- `INTEGRATION_READY.md` - Complete integration code for main app
+- `DEPLOYMENT.md` - Platform comparison and troubleshooting
+- `DEPLOYMENT_SUMMARY.md` - Executive overview and cost projections
+- `PRODUCTION_READY.md` - Production certification document
+- `QUICKSTART.md` - 5-minute local development setup
+- `PLAN_DATA_INTEGRATION.md` - Real Covered CA data strategy
+- `monitoring.ts` - Optional production monitoring setup
 
 **Data Integration:**
 
-The system includes a comprehensive plan data integration strategy (PLAN_DATA_INTEGRATION.md) covering:
+The system includes a comprehensive plan data integration strategy covering:
 - Covered California API integration
 - Database schema for plan storage with periodic sync
 - Redis caching layer for performance
@@ -90,7 +112,16 @@ Extensible priority-based routing supports current and future agents:
 }
 ```
 
-**Deployment:** The Society service runs independently on port 4000, communicates via REST API, and can be integrated with the main AskNewton app for wizard-based plan recommendations, WhatsApp chat, or standalone agent interactions.
+**Integration with Main App:**
+
+The Society service can be integrated with the main AskNewton app for:
+1. Wizard-based plan recommendations (after intake completion)
+2. WhatsApp conversational chat (via Twilio webhook)
+3. Standalone agent interactions (web, SMS, WhatsApp)
+
+Integration code and examples are provided in `society/INTEGRATION_READY.md`.
+
+**Deployment**: The Society service runs independently on port 4000, communicates via REST API with API key authentication, and is ready for production deployment via Render.com, Fly.io, or Docker.
 
 # External Dependencies
 
