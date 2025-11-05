@@ -1,0 +1,13 @@
+{
+  "channel": "web",
+  "intent": "coverage_recommendation",
+  "intake": {
+    "person": {"age": 28, "email":"sam@example.com"},
+    "residency": {"state":"CA", "zip":"94103"},
+    "household": {"size":1, "dependents":0, "income_range":"$30k-$40k"},
+    "doctors": ["Dr. Lee"],
+    "medications": [],
+    "budget_usd_monthly": 400,
+    "preferences": {"mental_health": true}
+  }
+}

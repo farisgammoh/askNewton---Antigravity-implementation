@@ -1,0 +1,59 @@
+Amazing—let’s run with Option B (TypeScript adaptation) and ship something tangible immediately. I’ve prepared a ready-to-run scaffold that fits your current stack (Express + Zod + BullMQ + pgvector + OpenAI).
+
+Download the scaffold (ZIP)￼
+
+What’s inside (quick tour)
+	•	src/index.ts – Express Gateway (/gateway) that routes requests
+	•	src/orchestrator/router.ts – lightweight Planner/Router
+	•	src/agents/concierge.ts – Concierge Agent (LLM-powered chat)
+	•	src/agents/coverageAdvisor.ts – Coverage Advisor (3-plan shortlist + explanations)
+	•	src/schemas/ – Zod data contracts (IntakeProfile, PlanRecommendationSet)
+	•	src/tools/ – stubs for plan catalog & provider directory (replace with your sources)
+	•	src/queue/queue.ts – BullMQ queue setup (for background jobs next)
+	•	example-requests/coverage.json – sample payload to test plan recommendations
+	•	.env.example – env vars
+
+How to run (5 steps)
+	1.	Unzip and cd asknewton-society-ts
+	2.	cp .env.example .env and fill values (OPENAI key, DB, Redis)
+	3.	npm i
+	4.	Start Postgres + Redis (local or Docker)
+	5.	npm run dev and POST to http://localhost:4000/gateway with example-requests/coverage.json
+
+Immediate integration points (this week)
+	•	Wire your existing intake wizard to POST the IntakeProfile to /gateway with intent: "coverage_recommendation".
+	•	WhatsApp: point your webhook to /gateway with intent: "concierge"; keep human handoff.
+	•	Plan data: replace src/tools/planCatalog.ts with your Covered CA/ACA plan source (or your internal catalog).
+
+Next steps (10-day sprint)
+
+Day 1–2
+	•	Replace plan stub with real plan fetch + pricing.
+	•	Add pgvector table for embeddings (FAQs, plan docs) for better explanations.
+
+Day 3–4
+	•	Add Compliance Guardrails (PHI/consent checks) at router level.
+	•	Implement Provider Directory lookup (exact vs fuzzy name match).
+
+Day 5–6
+	•	Add Benefits Navigator stub: in-network appointment assist endpoint.
+	•	Introduce BullMQ jobs for long tasks (quote retrieval, status polls).
+
+Day 7–8
+	•	Doc IQ Agent (v0): accept IDs/EOB PDFs → return structured JSON (plug your OCR).
+	•	Instrument metrics (quote time, CSAT prompts, plan-accept rate).
+
+Day 9–10
+	•	Harden API auth (JWT per channel), role-based tool access.
+	•	Ship admin console page to view PlanRecommendationSet + logs.
+
+Data contracts (you’re set)
+	•	IntakeProfile@v1: age, residency, household, doctors, meds, budget, prefs
+	•	PlanRecommendationSet@v1: 3-plan shortlist with premiums, OOP max, in-network hits, and a clear explanation
+
+Why Option B works best now
+	•	Uses your existing TypeScript app & infra (fastest to ship)
+	•	OpenAI SDK in TS is great; reasoning models slot right in
+	•	You can add Python microservices later for heavy AI (Hybrid path ready)
+
+If you want, I can also include a Docker compose for Postgres + Redis + pgvector and a minimal admin page next. ￼
