@@ -1,0 +1,151 @@
+Love it. Let’s turn “Society of Mind” into a buildable, multi-agent system for AskNewton—optimized for Replit + OpenAI and ready to grow into a fully functional health-insurance brokerage/MGA.
+
+Architecture at a glance
+
+Layers
+	1.	Interface layer: Web app, WhatsApp, SMS, email, phone IVR → single Gateway/API
+	2.	Agent layer (specialists): Each owns a domain (onboarding, plan advice, claims, etc.)
+	3.	Orchestrator layer: Planner/Router + Guardrails + Memory + Tools registry
+	4.	Data layer: Postgres (+pgvector), object storage, audit logs, analytics
+	5.	Workflow layer: Long-running jobs (quotes, prior-auth, claims follow-ups)
+
+Core agents (customer-facing)
+	1.	🚪 Onboarding Agent (MVP-ready with your wizard)
+
+	•	Tasks: identity & residency capture, intent (nomad/traveler/student), household, budget, PCP preference.
+	•	Tools: ID verification stub, address normalizer, eligibility rules, calendar booking.
+	•	Output: normalized IntakeProfile + risk/eligibility hints.
+
+	2.	💡 Coverage Advisor Agent
+
+	•	Tasks: match plans to IntakeProfile; explain trade-offs; compute OOP & premium estimates; shortlist 3 options.
+	•	Reasoning: rule engine (hard constraints) → LLM re-ranker (fit/explanation).
+	•	Tools: Plan catalog, network lookup, formulary lookup, subsidy estimator.
+	•	Output: PlanRecommendationSet with rationale & talk-track.
+
+	3.	📋 Claims Helper Agent
+
+	•	Tasks: first-notice-of-loss (FNOL), document intake, status checks, EOB explanations, escalation.
+	•	Tools: Doc IQ (OCR+extraction), carrier portal adapter, ticketing.
+	•	Output: ClaimCase with status, missing-items list, ETA.
+
+	4.	💬 Concierge / Customer Service Agent
+
+	•	Tasks: omni-channel Q&A, policy changes, appointment reminders, “explain like I’m 25” health-insurance tutor.
+	•	Guardrails: PHI scrubbing/consent checks; safe-handoff to human.
+
+Operational agents (back-office)
+	5.	🧮 Eligibility & Subsidy Agent – ACA/Covered California rules, residency, household size, MAGI inputs.
+	6.	🧾 Underwriting & Risk Agent – for MGA expansion: simple risk flags, plan switching risk, lapse risk.
+	7.	🏥 Network & Pricing Agent – provider in-network checks, PCP suggestions, facility tiers.
+	8.	🔐 Compliance & Governance Agent – HIPAA/SOC2 controls, consent ledger, audit trails, adverse action text.
+	9.	💳 Billing & Payments Agent – Stripe/Plaid for brokerage fees or add-ons; premium reminders; refunds.
+	10.	📄 Document IQ Agent – OCR, table capture, EOBs, IDs, prior-auth forms to structured JSON.
+	11.	🧭 Benefits Navigator Agent – find in-network visits, estimate costs, explain EOBs, preventive care nudges.
+	12.	🕵️ SIU/Fraud Triage Agent – anomaly detection on claims & support patterns (flags → human review).
+	13.	🤝 Provider Relations Agent – provider directory QA, fax/email outreach for missing info.
+	14.	📈 Growth/CRM Agent – lead scoring, lifecycle emails/WhatsApp nudges, churn-risk saves.
+	15.	📊 Analytics & KPI Agent – funnel analytics, CSAT, quote→bind rate, approval TAT, claim cycle time.
+
+Orchestration & standards
+	•	Planner/Router: Interprets user goal → decomposes into sub-tasks → assigns to agents; retries & fallbacks.
+	•	Memory:
+	•	Short-term: per-session context
+	•	Long-term: CustomerGraph (profiles, policies, interactions) in Postgres + pgvector for embeddings
+	•	Message contract (agent-to-agent):
+
+{
+  "task_id": "uuid",
+  "actor": "coverage_advisor",
+  "goal": "recommend_three_plans",
+  "inputs_ref": "intake_profile:uuid",
+  "constraints": ["monthly_budget<=450","must_include_mental_health"],
+  "outputs_schema": "PlanRecommendationSet@v1",
+  "status": "pending|done|error",
+  "audit": {"pii": true, "consent_id": "uuid"}
+}
+
+	•	Guardrails: PHI classifier & redactor, consent checks per channel, policy-aware response templates.
+	•	Event bus: lightweight (Redis Streams/NATS) for agent events; Temporal (or simple cron + DB) for long jobs.
+	•	Observability: structured logs, trace per task_id, per-agent SLIs/SLOs.
+
+Data contracts (essentials)
+
+IntakeProfile@v1: { person, dependents, residency, visa/student flags, income_range, doctors, meds, budget, preferences }
+PlanRecommendationSet@v1: { shortlist:[{plan_id, monthly_premium, oop_max, est_annual_cost, in_network_hits, pros_cons, explanation}], comparison_table }
+ClaimCase@v1: { claim_id, member_id, incident, docs:[…], carrier_ref, status, next_actions }
+Consent@v1: { subject_id, scopes:[“PHI”,”marketing”,”payments”], channel, timestamp, revocation? }
+
+Tech stack (Replit-friendly)
+	•	Backend: FastAPI (Python) monorepo (agents = packages); Pydantic for schemas; Celery/Temporal for tasks.
+	•	LLM layer: OpenAI function-calling for tool use; optional “reasoning models” for planning (o-series / structured reasoning).
+	•	Vector: pgvector in Postgres for RAG over plan docs, EOBs, FAQs.
+	•	Frontends: Next.js SPA + WhatsApp/Twilio + Calendly webhooks.
+	•	Storage: S3-compatible (R2/Wasabi) with BAA where needed; signed URLs.
+	•	Security: per-agent API tokens, role-based tool access, encryption at rest, IP allowlists for admin.
+
+Product roadmap (concrete, fast)
+
+Phase 0 (Week 1–2): Foundations
+	•	Monorepo skeleton; Agent SDK (router, message bus, audit); Data schemas; Auth & consent.
+	•	Wire your existing intake wizard into Onboarding Agent; WhatsApp & Calendly webhooks into Concierge.
+	•	KPIs live: lead→wizard start→advisor consult booked.
+
+Phase 1 (Days 15–45): MVP live (CA personas)
+	•	Coverage Advisor v1 (rules + LLM re-ranker) with 3-plan compare + talk-track.
+	•	Compliance Agent v1 (PHI detection, consent ledger, audit trail).
+	•	Doc IQ v1 for IDs/EOB screenshots.
+	•	Ship: web + WhatsApp flows; human handoff; dashboards.
+
+Phase 2 (Days 45–90): Claims & Benefits
+	•	Claims Helper v1 (FNOL, doc list, carrier status polling).
+	•	Benefits Navigator v1 (in-network provider/appointment assist, cost estimates).
+	•	Network & Pricing Agent v1 (basic provider matching).
+	•	Growth Agent v1 (reminders, renewals, churn-saves).
+
+Phase 3 (90–180 days): MGA-ready & scale
+	•	Eligibility/Subsidy Agent (ACA nuances); Billing Agent (Stripe/Plaid for add-ons).
+	•	Underwriting/Risk Agent (for MGA pilots); SIU triage; Provider Relations automations.
+	•	Multi-state expansion switches (e.g., MI).
+	•	SOC2/HIPAA maturity: policy packs, evidence collection.
+
+How agents actually call tools (pattern)
+	•	Tools registry: python functions with strict I/O; exposed via OpenAI function-calling.
+Example (Coverage Advisor → Plan Catalog):
+
+def find_plans(zip_code:str, age:int, doctors:list[str], meds:list[str], budget:int)->list[dict]:
+    ...
+# LLM gets function signature; returns arguments; tool executes; result routed back to agent.
+
+Minimal repos & services
+
+/asknewton
+  /apps
+    /gateway   (FastAPI, auth, channel webhooks)
+    /console   (Next.js admin)
+  /agents
+    onboarding/
+    concierge/
+    coverage_advisor/
+    claims_helper/
+    compliance/
+    ...
+  /packages
+    agent_sdk/     (router, message bus, logging, retries)
+    data_models/   (Pydantic schemas)
+    tools/         (plan_catalog, provider_dir, doc_ocr, payments, calendar, sms)
+  /infra
+    docker-compose.dev.yml (Postgres+pgvector, Redis, MinIO)
+
+Evaluation & safety (baked-in)
+	•	Golden tasks: 20 scripted journeys per persona (nomad/traveler/student).
+	•	Metrics: quote-time, first-response-time, plan-accept rate, CSAT, claim cycle time, PHI-leak rate (target 0).
+	•	Red-team: jailbreak & refund-abuse prompts; data exfiltration checks; escalation trees.
+
+What to build first (this week)
+	1.	Spin up monorepo skeleton + Agent SDK.
+	2.	Wire Onboarding → Coverage Advisor happy-path using your current wizard data.
+	3.	Add Concierge on WhatsApp with safe handoff and consent checks.
+	4.	Ship 3-plan compare UI with clear explanations and CTA to book consult/pay small advisory fee.
+
+If you want, I can drop in a ready-to-use repo scaffold (FastAPI + agent router + sample Coverage Advisor with stubbed tools + pgvector) next.
