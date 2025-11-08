@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { leadSchema } from "@shared/schema";
@@ -133,6 +133,11 @@ async function zapMirror(eventName: string, payload: any) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Serve static files from public/ directory (must be before API routes)
+  // This allows /classic and other static content to be served correctly
+  const publicPath = path.resolve(process.cwd(), "public");
+  app.use(express.static(publicPath));
+  
   // Add body parser middleware for webhook handling
   app.use(bodyParser.json());
   // Lead submission endpoint
