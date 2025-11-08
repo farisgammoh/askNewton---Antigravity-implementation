@@ -43,6 +43,9 @@ export default function Footer() {
               <Link href="/legal/disclosures" className="block text-muted-foreground hover:text-foreground" data-testid="footer-disclosures">
                 Disclosures
               </Link>
+              <a href="/classic" className="block text-muted-foreground hover:text-foreground" data-testid="footer-classic">
+                Classic Site
+              </a>
             </div>
           </div>
           
