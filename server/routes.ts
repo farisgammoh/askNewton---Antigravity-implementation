@@ -279,6 +279,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Zapier webhook test endpoint - helps debug integration issues
+  app.post("/api/zapier/test", async (req, res) => {
+    try {
+      console.log('📡 Zapier test webhook received:', JSON.stringify(req.body, null, 2));
+      
+      // Extract common fields with graceful fallbacks
+      const testData = {
+        name: req.body.name || req.body.full_name || req.body.email?.split('@')[0] || 'User',
+        email: req.body.email || 'test@example.com',
+        persona: req.body.persona || req.body.type || 'nomad',
+        preferredLanguage: req.body.preferredLanguage || req.body.preferred_language || req.body.language || 'English',
+        healthInfo: req.body.healthInfo || req.body.health_info || req.body.health || 'Not provided',
+        lifestyle: req.body.lifestyle || 'Not provided',
+        preferredProvider: req.body.preferredProvider || req.body.preferred_provider || req.body.provider || 'Not provided',
+        arrivalDate: req.body.arrivalDate || req.body.arrival_date || 'Not provided',
+        stayLength: req.body.stayLength || req.body.stay_length || 'Not provided',
+        currentCoverage: req.body.currentCoverage || req.body.current_coverage || req.body.coverage || 'Not provided'
+      };
+      
+      // Return what the email would look like without actually sending it
+      const emailPreview = {
+        to: testData.email,
+        subject: `Welcome to AskNewton, ${testData.name.split(' ')[0]}! 🎉`,
+        data: testData,
+        message: '✅ This is what your welcome email would contain (not actually sent in test mode)'
+      };
+      
+      res.status(200).json({
+        success: true,
+        message: '✅ Webhook test successful! Email data formatted correctly.',
+        receivedPayload: req.body,
+        formattedData: testData,
+        emailPreview: emailPreview,
+        tips: {
+          noPlaceholders: 'All fields have graceful fallbacks - no more "[Language will appear here]" errors!',
+          productionReady: 'In production, this data would trigger a beautiful HTML welcome email',
+          zapierSetup: 'Use this endpoint to test your Zapier webhook before going live'
+        }
+      });
+    } catch (error) {
+      console.error('Zapier test error:', error);
+      res.status(500).json({ 
+        error: 'Test failed', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  // Send test welcome email endpoint (for testing email templates)
+  app.post("/api/email/test-welcome", async (req, res) => {
+    try {
+      const testData: OnboardingEmailData = {
+        name: req.body.name || 'Test User',
+        email: req.body.email || 'test@example.com',
+        persona: req.body.persona || 'nomad',
+        preferredLanguage: req.body.preferredLanguage || 'English',
+        healthInfo: req.body.healthInfo || 'Generally healthy',
+        lifestyle: req.body.lifestyle || 'Active lifestyle',
+        preferredProvider: req.body.preferredProvider || 'Blue Shield',
+        arrivalDate: req.body.arrivalDate || '2025-01-15',
+        stayLength: req.body.stayLength || '6 months',
+        currentCoverage: req.body.currentCoverage || 'None'
+      };
+      
+      const result = await sendWelcomeEmail(testData);
+      
+      if (result) {
+        res.json({ 
+          success: true, 
+          message: `Test welcome email sent to ${testData.email}`,
+          data: testData 
+        });
+      } else {
+        res.status(500).json({ 
+          success: false, 
+          error: 'Email sending failed - check SendGrid configuration' 
+        });
+      }
+    } catch (error) {
+      console.error('Test email error:', error);
+      res.status(500).json({ 
+        error: 'Test failed', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
   // Get individual lead endpoint (public - for recommendation flow, PII redacted)
   app.get("/api/leads/:leadId", async (req, res) => {
     try {
