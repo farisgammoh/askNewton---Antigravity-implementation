@@ -12,7 +12,6 @@ console.log('🚀 Starting AskNewton with Enhanced Webhook Server...\n');
 // Start main application (npm run dev)
 const mainApp = spawn('npm', ['run', 'dev'], {
   stdio: 'inherit',
-  shell: true,
   cwd: __dirname
 });
 
@@ -31,7 +30,6 @@ if (!adminToken && process.env.NODE_ENV === 'development') {
 // Start webhook server with resilience patterns
 const webhookServer = spawn('node', ['server.js'], {
   stdio: 'inherit',
-  shell: true,
   cwd: __dirname,
   env: {
     ...process.env,
