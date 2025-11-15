@@ -48,6 +48,38 @@ The current implementation uses a simple session-based approach with minimal aut
 
 This lightweight approach aligns with the lead capture nature of the application.
 
+## Email and Webhook Integration
+
+The application includes production-ready email automation and webhook integration for customer onboarding:
+
+- **Customer Welcome Emails**: Automated welcome emails sent immediately after lead submission
+- **SendGrid Integration**: Professional HTML and text email templates with Apple-style minimalist design
+- **Graceful Fallbacks**: All email fields have default values - no placeholder text ever appears
+- **Webhook Support**: Zapier integration for external automation workflows
+- **Test Endpoints**: Dedicated endpoints for testing email templates and webhook integration
+- **Multi-format Support**: Handles various field naming conventions (camelCase, snake_case, etc.)
+
+**Email Templates**:
+- Beautiful HTML emails with gradient headers, information cards, and responsive design
+- Plain text fallback for email clients without HTML support
+- Personalized subject lines and dynamic content based on user data
+- Clear call-to-action buttons for scheduling consultations
+
+**Implementation Files**:
+- `server/email.ts` - Email service with `sendWelcomeEmail()` and `sendLeadNotification()` functions
+- `server/routes.ts` - API endpoints with email integration on `/api/lead` and `/api/simple-lead`
+- `ZAPIER_INTEGRATION_GUIDE.md` - Complete setup guide for Zapier automation
+
+**Test Endpoints**:
+- `POST /api/zapier/test` - Test webhook data formatting without sending emails
+- `POST /api/email/test-welcome` - Send actual test welcome email to verify templates
+
+**Environment Variables**:
+- `SENDGRID_API_KEY` - SendGrid API key for email sending
+- `SENDGRID_FROM_EMAIL` - Verified sender email address
+- `WEBHOOK_URL` - Zapier webhook URL for external integrations
+- `NOTIFICATION_EMAIL` - Internal email for lead notifications
+
 ## Society of Mind Multi-Agent System
 
 AskNewton includes a production-ready "Society of Mind" architecture - a separate Express.js service (port 4000) that orchestrates specialized AI agents for different health insurance tasks. This TypeScript implementation provides intelligent, context-aware responses across multiple channels.
