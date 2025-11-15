@@ -1,10 +1,24 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { setupSecurityMiddleware, addRequestId, sendSecureError } from "./security";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+
+// Body parsing with size limits
+const bodySizeLimit = '10mb';
+app.use(express.json({ limit: bodySizeLimit }));
+app.use(express.urlencoded({ extended: false, limit: bodySizeLimit }));
+
+// Security middleware (Helmet, CORS, Rate Limiting)
+setupSecurityMiddleware(app, {
+  allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || undefined,
+  maxBodySize: bodySizeLimit,
+  enableRateLimit: true
+});
+
+// Request ID tracking
+app.use(addRequestId);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -43,8 +57,8 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    // Use secure error response (strips details in production)
+    sendSecureError(res, status, 'Request failed', message, err.stack);
   });
 
   // importantly only setup vite in development and after

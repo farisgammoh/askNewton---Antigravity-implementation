@@ -264,6 +264,7 @@ export class MemStorage implements IStorage {
       specialties: insertPersona.specialties as string[],
       targetPersonas: insertPersona.targetPersonas as string[],
       newtonianValues: insertPersona.newtonianValues as any,
+      imageUrl: insertPersona.imageUrl ?? null,
       isActive: insertPersona.isActive ?? true,
       id, 
       createdAt: new Date(),
@@ -339,7 +340,7 @@ export class MemStorage implements IStorage {
     const message: Message = {
       ...insertMessage,
       id,
-      fileUrls: insertMessage.fileUrls || null,
+      fileUrls: insertMessage.fileUrls ? [...insertMessage.fileUrls] : null,
       timestamp: new Date()
     };
     this.messages.set(id, message);
@@ -372,6 +373,8 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const selection: PersonaSelection = {
       ...insertSelection,
+      phone: insertSelection.phone ?? null,
+      notes: insertSelection.notes ?? null,
       id,
       createdAt: new Date()
     };

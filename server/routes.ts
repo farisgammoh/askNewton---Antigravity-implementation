@@ -13,6 +13,7 @@ import twilio from "twilio";
 import nodemailer from "nodemailer";
 import { createIsaacAgent, createNewtonAgent, type NewtonVoiceAgent, type VoicePersona, NEWTON_VOICES } from "./services/elevenlabs";
 import bodyParser from "body-parser";
+import { rateLimiters, requireAdmin, requireElevenLabsAuth as requireElevenLabsAuthSecure, sendSecureError, validateWebhookUrl } from "./security";
 
 // Helper function to get persona descriptions
 function getPersonaDescription(persona: VoicePersona): string {
@@ -24,16 +25,9 @@ function getPersonaDescription(persona: VoicePersona): string {
   return descriptions[persona];
 }
 
-// ElevenLabs webhook authentication
-function requireElevenLabsAuth(req: any, res: any, next: any) {
-  const token = (req.headers.authorization || "").replace("Bearer ", "");
-  const backendToken = process.env.BACKEND_BEARER_TOKEN;
-  
-  if (!backendToken || token !== backendToken) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  next();
-}
+// Use centralized ElevenLabs webhook authentication (imported from security module)
+// Legacy function kept for reference but should migrate to requireElevenLabsAuthSecure
+const requireElevenLabsAuth = requireElevenLabsAuthSecure;
 
 // HubSpot contact management
 async function hsUpsertContact({ email, phone, firstname, lastname, lang }: {
@@ -120,11 +114,18 @@ async function zapMirror(eventName: string, payload: any) {
   const zapierUrl = process.env.ZAPIER_HOOK_URL;
   if (!zapierUrl) return;
   
+  const validation = validateWebhookUrl(zapierUrl);
+  if (!validation.valid) {
+    console.error('Invalid Zapier webhook URL:', validation.error);
+    return;
+  }
+  
   try {
     await fetch(zapierUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event: eventName, payload })
+      body: JSON.stringify({ event: eventName, payload }),
+      signal: AbortSignal.timeout(10000) // 10 second timeout
     });
     console.log(`📡 Event ${eventName} forwarded to Zapier`);
   } catch (e) {
@@ -140,8 +141,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Add body parser middleware for webhook handling
   app.use(bodyParser.json());
-  // Lead submission endpoint
-  app.post("/api/lead", async (req, res) => {
+  // Lead submission endpoint (with rate limiting)
+  app.post("/api/lead", rateLimiters.leadSubmission, async (req, res) => {
     try {
       const parsed = leadSchema.parse(req.body);
       
@@ -152,15 +153,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Forward to webhook if configured
       const webhookUrl = process.env.WEBHOOK_URL;
       if (webhookUrl) {
-        try {
-          await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...lead })
-          });
-        } catch (error) {
-          console.error('Webhook error:', error);
-          // Don't fail the request if webhook fails
+        const validation = validateWebhookUrl(webhookUrl);
+        if (!validation.valid) {
+          console.error('Invalid webhook URL:', validation.error);
+        } else {
+          try {
+            await fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...lead }),
+              signal: AbortSignal.timeout(10000) // 10 second timeout
+            });
+          } catch (error) {
+            console.error('Webhook error:', error);
+            // Don't fail the request if webhook fails
+          }
         }
       }
 
@@ -210,19 +217,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Simple conversational onboarding endpoint
-  app.post("/api/simple-lead", async (req, res) => {
+  // Simple conversational onboarding endpoint (with rate limiting)
+  app.post("/api/simple-lead", rateLimiters.leadSubmission, async (req, res) => {
     try {
       const parsed = simpleOnboardingSchema.parse(req.body);
       
       // Forward to webhook (Zapier) immediately - this is the main purpose
       const webhookUrl = process.env.WEBHOOK_URL;
       if (webhookUrl) {
-        try {
-          // Ensure webhook URL is HTTPS for security
-          if (!webhookUrl.startsWith('https://')) {
-            console.error('Webhook URL must be HTTPS for security');
-          } else {
+        const validation = validateWebhookUrl(webhookUrl);
+        if (!validation.valid) {
+          console.error('Invalid webhook URL:', validation.error);
+        } else {
+          try {
             const response = await fetch(webhookUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -239,10 +246,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
             
             console.log('📡 Conversational lead forwarded to webhook successfully');
+          } catch (error) {
+            console.error('Webhook error:', error);
+            // Don't fail the request if webhook fails
           }
-        } catch (error) {
-          console.error('Webhook error:', error);
-          // Don't fail the request if webhook fails
         }
       }
 
@@ -327,8 +334,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Send test welcome email endpoint (for testing email templates)
-  app.post("/api/email/test-welcome", async (req, res) => {
+  // Send test welcome email endpoint (for testing email templates, with rate limiting)
+  app.post("/api/email/test-welcome", rateLimiters.email, async (req, res) => {
     try {
       const testData: OnboardingEmailData = {
         name: req.body.name || 'Test User',
@@ -399,18 +406,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get leads endpoint (admin only - for debugging)
-  app.get("/api/leads", async (req, res) => {
-    // Require admin API key for security
-    const adminKey = req.headers['x-admin-key'];
-    const expectedKey = process.env.ADMIN_API_KEY;
-    
-    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
-    
-    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
-      return res.status(401).json({ error: "Unauthorized - Admin access required" });
-    }
-
+  // Get leads endpoint (admin only - for debugging, with rate limiting)
+  app.get("/api/leads", rateLimiters.auth, requireAdmin, async (req, res) => {
     try {
       const storageInstance = await storage();
       const leads = await storageInstance.getLeads();
@@ -421,18 +418,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // HubSpot connection test endpoint (admin only)
-  app.get("/api/hubspot/test", async (req, res) => {
-    // Require admin API key for security
-    const adminKey = req.headers['x-admin-key'];
-    const expectedKey = process.env.ADMIN_API_KEY;
-    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
-    
-    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
-      return res.status(401).json({ error: "Unauthorized - Admin access required" });
-    }
-
-    try {
+  // HubSpot connection test endpoint (admin only, with rate limiting)
+  app.get("/api/hubspot/test", rateLimiters.auth, requireAdmin, async (req, res) => {
+    try{
       const testResult = await hubSpotService.testConnection();
       res.json({
         configured: hubSpotService.isConfigured(),
@@ -444,16 +432,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Persona generation endpoint (admin only)
-  app.post("/api/personas/generate", async (req, res) => {
-    const adminKey = req.headers['x-admin-key'];
-    const expectedKey = process.env.ADMIN_API_KEY;
-    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
-    
-    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
-      return res.status(401).json({ error: "Unauthorized - Admin access required" });
-    }
-
+  // Persona generation endpoint (admin only, with rate limiting)
+  app.post("/api/personas/generate", rateLimiters.aiGeneration, requireAdmin, async (req, res) => {
     try {
       const { count = 12 } = req.body;
       
@@ -606,16 +586,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Generate images for personas (admin only)
-  app.post("/api/personas/generate-images", async (req, res) => {
-    const adminKey = req.headers['x-admin-key'];
-    const expectedKey = process.env.ADMIN_API_KEY;
-    const receivedKeyStr = Array.isArray(adminKey) ? adminKey[0] : adminKey;
-    
-    if (!receivedKeyStr || receivedKeyStr !== expectedKey) {
-      return res.status(401).json({ error: "Unauthorized - Admin access required" });
-    }
-
+  // Generate images for personas (admin only, with rate limiting)
+  app.post("/api/personas/generate-images", rateLimiters.aiGeneration, requireAdmin, async (req, res) => {
     try {
       if (!askNewtonAI.isConfigured()) {
         return res.status(503).json({ 
@@ -981,8 +953,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Google Ads lead endpoint - accepts leads from Google Ads campaigns
-  app.post("/api/google-ads-leads", async (req, res) => {
+  // Google Ads lead endpoint - accepts leads from Google Ads campaigns (with rate limiting)
+  app.post("/api/google-ads-leads", rateLimiters.leadSubmission, async (req, res) => {
     try {
       console.log("📱 New Google Ads lead received:", req.body);
       
@@ -1035,20 +1007,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Forward to webhook if configured (same as regular leads)
       const webhookUrl = process.env.WEBHOOK_URL;
       if (webhookUrl) {
-        try {
-          await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              ...lead, 
-              source: 'google_ads',
-              original_data: parsed 
-            })
-          });
-          console.log("📡 Google Ads lead forwarded to webhook");
-        } catch (error) {
-          console.error('Google Ads webhook error:', error);
-          // Don't fail the request if webhook fails
+        const validation = validateWebhookUrl(webhookUrl);
+        if (!validation.valid) {
+          console.error('Invalid webhook URL:', validation.error);
+        } else {
+          try {
+            await fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                ...lead, 
+                source: 'google_ads',
+                original_data: parsed 
+              }),
+              signal: AbortSignal.timeout(10000) // 10 second timeout
+            });
+            console.log("📡 Google Ads lead forwarded to webhook");
+          } catch (error) {
+            console.error('Google Ads webhook error:', error);
+            // Don't fail the request if webhook fails
+          }
         }
       }
 
@@ -1129,8 +1107,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }) : null;
 
-  // AskNewton Message Integrator - Webhook endpoint for Twilio messages
-  app.post("/api/message", async (req, res) => {
+  // AskNewton Message Integrator - Webhook endpoint for Twilio messages (with rate limiting)
+  app.post("/api/message", rateLimiters.webhook, async (req, res) => {
     try {
       const { From, Body, To } = req.body;
       
@@ -1146,21 +1124,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 1. Forward to Zapier webhook if configured
       const webhookUrl = process.env.WEBHOOK_URL;
       if (webhookUrl) {
-        try {
-          await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              channel,
-              from: From,
-              to: To,
-              message: Body,
-              timestamp: new Date().toISOString()
-            })
-          });
-          console.log(`📡 Message forwarded to webhook successfully`);
-        } catch (error) {
-          console.error('Webhook forwarding error:', error);
+        const validation = validateWebhookUrl(webhookUrl);
+        if (!validation.valid) {
+          console.error('Invalid webhook URL:', validation.error);
+        } else {
+          try {
+            await fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                channel,
+                from: From,
+                to: To,
+                message: Body,
+                timestamp: new Date().toISOString()
+              }),
+              signal: AbortSignal.timeout(10000) // 10 second timeout
+            });
+            console.log(`📡 Message forwarded to webhook successfully`);
+          } catch (error) {
+            console.error('Webhook forwarding error:', error);
+          }
         }
       }
 
@@ -1258,8 +1242,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Generate Newton voice response
-  app.post("/api/newton/voice", async (req, res) => {
+  // Generate Newton voice response (with rate limiting)
+  app.post("/api/newton/voice", rateLimiters.aiGeneration, async (req, res) => {
     try {
       if (!newtonAgent) {
         return res.status(503).json({ 
@@ -1309,8 +1293,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Generate custom Newton voice message  
-  app.post("/api/newton/custom", async (req, res) => {
+  // Generate custom Newton voice message (with rate limiting)
+  app.post("/api/newton/custom", rateLimiters.aiGeneration, async (req, res) => {
     try {
       if (!newtonAgent) {
         return res.status(503).json({ 
@@ -1502,7 +1486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Configure these in ElevenLabs Agents → Settings/Webhooks
   // Use Authorization: Bearer <BACKEND_BEARER_TOKEN>
 
-  app.post("/webhooks/eleven/conversation-start", requireElevenLabsAuth, async (req, res) => {
+  app.post("/webhooks/eleven/conversation-start", rateLimiters.webhook, requireElevenLabsAuth, async (req, res) => {
     try {
       const p = req.body || {};
       await zapMirror("conversation_start", p);
@@ -1530,7 +1514,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/webhooks/eleven/conversation-end", requireElevenLabsAuth, async (req, res) => {
+  app.post("/webhooks/eleven/conversation-end", rateLimiters.webhook, requireElevenLabsAuth, async (req, res) => {
     try {
       const p = req.body || {};
       await zapMirror("conversation_end", p);
@@ -1557,7 +1541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/webhooks/eleven/voicemail", requireElevenLabsAuth, async (req, res) => {
+  app.post("/webhooks/eleven/voicemail", rateLimiters.webhook, requireElevenLabsAuth, async (req, res) => {
     try {
       const p = req.body || {};
       await zapMirror("voicemail_detected", p);
@@ -1570,7 +1554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/webhooks/eleven/transfer", requireElevenLabsAuth, async (req, res) => {
+  app.post("/webhooks/eleven/transfer", rateLimiters.webhook, requireElevenLabsAuth, async (req, res) => {
     try {
       const p = req.body || {};
       await zapMirror("transfer_to_human", p);
