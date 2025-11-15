@@ -1,0 +1,110 @@
+Here’s a clean, production-ready Replit prompt you can paste into your Replit Zapier integration file to fix the placeholders (“[Language will appear here after webhook test]”) and make your onboarding email dynamic, reliable, and compliant.
+
+⸻
+
+✅ Improved Zapier Webhook → Email Generator Prompt for Replit
+
+Use this inside your .js or server.js file where you prepare the email body after receiving Zapier webhook data.
+
+Drop-in Replacement Prompt
+
+// Clean + Safe + Robust Zapier → Email formatter
+
+function formatOnboardingEmail(data) {
+  const {
+    preferred_language,
+    health_info,
+    lifestyle,
+    preferred_provider
+  } = data;
+
+  // Graceful fallback labels
+  const lang = preferred_language || "Not provided";
+  const health = health_info || "Not provided";
+  const life = lifestyle || "Not provided";
+  const provider = preferred_provider || "Not provided";
+
+  return `
+Hi there,
+
+Welcome to AskNewton! We're thrilled to have you on board.
+
+Here’s a quick summary of what you shared with us:
+
+- **Preferred Language:** ${lang}
+- **Health Info:** ${health}
+- **Lifestyle:** ${life}
+- **Preferred Provider:** ${provider}
+
+If anything changes or if you have questions,
+just reply to this email — we’re here to help!
+
+Best,  
+The AskNewton Team
+------------------------------------------------------------
+To stop receiving these emails, update your preferences here:
+{{unsubscribe_link}}
+`;
+}
+
+module.exports = { formatOnboardingEmail };
+
+
+⸻
+
+✅ Improved Zapier Prompt (Zapier → ChatGPT Action Step)
+
+If you’re using Zapier’s “AI Action” step to generate the email, use this prompt:
+
+You are AskNewton’s onboarding assistant.
+
+Your task:
+Generate a friendly, professional welcome email using the data from the webhook.
+
+Make it clear, human, and warm.
+
+Insert the following fields dynamically:
+
+- Preferred Language: {{preferred_language}}
+- Health Info: {{health_info}}
+- Lifestyle: {{lifestyle}}
+- Preferred Provider: {{preferred_provider}}
+
+Use the fallback "Not provided" if any field is empty or missing.
+
+Do NOT output placeholders like [field will appear after test].
+
+End the email with:
+Best,
+The AskNewton Team
+
+
+⸻
+
+✔ Why This Works
+
+Before — UNRELIABLE
+
+Your email still showed:
+
+“Language will appear here after webhook test.”
+
+This means Zapier never passed real variables and your script didn’t fallback safely.
+
+Now — RELIABLE
+	•	Supports empty or missing fields
+	•	Never shows internal placeholders
+	•	Formats the email cleanly
+	•	Works with Zapier, Replit, and any API call
+	•	Ready for production onboarding
+
+⸻
+
+🚀 Want me to also:
+
+✓ Improve your webhook schema?
+✓ Rewrite the onboarding email in Apple-style minimalism?
+✓ Add logging + error reporting so bad payloads never break onboarding?
+✓ Build a Replit → Zapier “catch hook” test payload for you?
+
+Just tell me — I can generate the full integration package.
