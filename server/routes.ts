@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { leadSchema } from "@shared/schema";
 import { z } from "zod";
-import { sendLeadNotification, type LeadNotificationData } from "./email";
+import { sendLeadNotification, sendWelcomeEmail, type LeadNotificationData, type OnboardingEmailData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
 import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, simpleOnboardingSchema } from "@shared/schema";
@@ -164,8 +164,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Send email notification using SendGrid
+      // Send internal lead notification email
       await sendLeadNotification(lead);
+
+      // Send welcome email to customer
+      try {
+        await sendWelcomeEmail({
+          name: lead.name,
+          email: lead.email,
+          persona: lead.persona,
+          arrivalDate: lead.arrivalDate,
+          stayLength: lead.stayLength,
+          currentCoverage: lead.currentCoverage
+        });
+        console.log(`✉️  Welcome email sent to customer: ${lead.email}`);
+      } catch (error) {
+        console.error('Welcome email error:', error);
+        // Don't fail the request if welcome email fails
+      }
 
       // Send to HubSpot CRM (don't fail if HubSpot fails)
       try {
@@ -228,6 +244,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error('Webhook error:', error);
           // Don't fail the request if webhook fails
         }
+      }
+
+      // Send welcome email to customer
+      try {
+        await sendWelcomeEmail({
+          name: parsed.email.split('@')[0], // Use email username as fallback name
+          email: parsed.email,
+          preferredLanguage: parsed.language,
+          healthInfo: parsed.health_info,
+          lifestyle: parsed.lifestyle,
+          preferredProvider: parsed.provider
+        });
+        console.log(`✉️  Welcome email sent to customer: ${parsed.email}`);
+      } catch (error) {
+        console.error('Welcome email error:', error);
+        // Don't fail the request if welcome email fails
       }
 
       res.status(201).json({ 
