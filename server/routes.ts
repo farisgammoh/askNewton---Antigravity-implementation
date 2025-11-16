@@ -926,8 +926,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Streaming chat endpoint for better UX (Server-Sent Events)
   // Note: Currently sends full response at once; true streaming to be implemented
-  // Public endpoint (no auth) but rate-limited to prevent abuse
-  app.post("/api/chat/stream", rateLimiters.general, async (req, res) => {
+  // Public endpoint but rate-limited to prevent abuse of expensive AI operations
+  app.post("/api/chat/stream", rateLimiters.leadSubmission, async (req, res) => {
     try {
       const { messages } = req.body;
       
