@@ -11,7 +11,7 @@ Follow these instructions when using this blueprint:
 
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
 
-interface GeneratedPersona {
+export interface GeneratedPersona {
   name: string;
   title: string;
   personality: string;
@@ -429,5 +429,5 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
 // Export singleton instance
 export const askNewtonAI = new AskNewtonAI();
 
-// Export types for use in other modules
-export type { GeneratedPersona, PersonalizedRecommendation };
+// Export PersonalizedRecommendation type (GeneratedPersona already exported above)
+export type { PersonalizedRecommendation };

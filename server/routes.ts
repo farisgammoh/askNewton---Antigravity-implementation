@@ -433,9 +433,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Persona generation endpoint (admin only, with rate limiting)
+  // Now with caching to reduce OpenAI API calls
   app.post("/api/personas/generate", rateLimiters.aiGeneration, requireAdmin, async (req, res) => {
     try {
-      const { count = 12 } = req.body;
+      const { count = 12, email } = req.body;
       
       if (!askNewtonAI.isConfigured()) {
         return res.status(503).json({ 
@@ -444,8 +445,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Generate personas using AI
-      const generatedPersonas = await askNewtonAI.generatePersonas(count);
+      // Use caching service to reduce API costs
+      const { generatePersonasWithCaching } = await import("./services/personaCache");
+      const { personas: generatedPersonas, fromCache } = await generatePersonasWithCaching({
+        count,
+        email
+      });
       
       // Store personas in database
       const storageInstance = await storage();
@@ -464,7 +469,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: true, 
         generated: generatedPersonas.length,
         saved: savedPersonas.length,
-        personas: savedPersonas
+        personas: savedPersonas,
+        fromCache // Indicates if result came from cache (cost savings indicator)
       });
 
     } catch (error) {
@@ -914,6 +920,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(messages);
     } catch (error) {
       console.error('Get messages error:', error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Streaming chat endpoint for better UX (Server-Sent Events)
+  // Note: Currently sends full response at once; true streaming to be implemented
+  // Public endpoint (no auth) but rate-limited to prevent abuse
+  app.post("/api/chat/stream", rateLimiters.general, async (req, res) => {
+    try {
+      const { messages } = req.body;
+      
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: "Messages array is required" });
+      }
+      
+      // Set headers for Server-Sent Events
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+      
+      // Get user message and context
+      const userMessage = messages[messages.length - 1]?.content || "";
+      const conversationContext = messages.slice(0, -1);
+      
+      const response = await askNewtonAI.generateChatResponse(
+        userMessage,
+        conversationContext
+      );
+      
+      // Send as SSE format (future: implement true streaming)
+      res.write(`data: ${JSON.stringify({ content: response })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+      
+    } catch (error) {
+      console.error("Streaming chat error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

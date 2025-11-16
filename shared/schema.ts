@@ -308,3 +308,25 @@ export const simpleOnboardingSchema = z.object({
 });
 
 export type SimpleOnboardingData = z.infer<typeof simpleOnboardingSchema>;
+
+// Persona Cache table - for caching AI-generated personas
+export const personaCache = pgTable("persona_cache", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  inputHash: varchar("input_hash", { length: 64 }).notNull().unique(),
+  personasJson: jsonb("personas_json").notNull(),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+export type PersonaCache = typeof personaCache.$inferSelect;
+export type InsertPersonaCache = typeof personaCache.$inferInsert;
+
+// Request Log table - for request idempotency
+export const requestLog = pgTable("request_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestHash: varchar("request_hash", { length: 64 }).notNull().unique(),
+  responseJson: jsonb("response_json").notNull(),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+export type RequestLog = typeof requestLog.$inferSelect;
+export type InsertRequestLog = typeof requestLog.$inferInsert;

@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, type PersonaSelection, type InsertPersonaSelection, users, leads, personas, recommendations, conversations, messages, uploadedFiles, personaSelections } from "@shared/schema";
+import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, type PersonaSelection, type InsertPersonaSelection, type PersonaCache, type InsertPersonaCache, type RequestLog, type InsertRequestLog, users, leads, personas, recommendations, conversations, messages, uploadedFiles, personaSelections, personaCache, requestLog } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
@@ -36,6 +36,14 @@ export interface IStorage {
   createPersonaSelection(selection: InsertPersonaSelection): Promise<PersonaSelection>;
   getPersonaSelectionByEmail(email: string): Promise<PersonaSelection | undefined>;
   getPersonaSelections(): Promise<PersonaSelection[]>;
+  
+  // Persona cache methods (cost optimization)
+  createPersonaCache(cache: InsertPersonaCache): Promise<PersonaCache>;
+  getPersonaCache(inputHash: string): Promise<PersonaCache | undefined>;
+  
+  // Request log methods (idempotency)
+  createRequestLog(log: InsertRequestLog): Promise<RequestLog>;
+  getRequestLog(requestHash: string): Promise<RequestLog | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -190,6 +198,36 @@ export class DatabaseStorage implements IStorage {
   async getPersonaSelections(): Promise<PersonaSelection[]> {
     return await this.db.select().from(personaSelections);
   }
+
+  // Persona cache methods
+  async createPersonaCache(insertCache: InsertPersonaCache): Promise<PersonaCache> {
+    const [cache] = await this.db
+      .insert(personaCache)
+      .values(insertCache)
+      .returning();
+    return cache;
+  }
+
+  async getPersonaCache(inputHash: string): Promise<PersonaCache | undefined> {
+    const [cache] = await this.db.select().from(personaCache)
+      .where(eq(personaCache.inputHash, inputHash));
+    return cache || undefined;
+  }
+
+  // Request log methods
+  async createRequestLog(insertLog: InsertRequestLog): Promise<RequestLog> {
+    const [log] = await this.db
+      .insert(requestLog)
+      .values(insertLog)
+      .returning();
+    return log;
+  }
+
+  async getRequestLog(requestHash: string): Promise<RequestLog | undefined> {
+    const [log] = await this.db.select().from(requestLog)
+      .where(eq(requestLog.requestHash, requestHash));
+    return log || undefined;
+  }
 }
 
 // Keep MemStorage for fallback
@@ -202,6 +240,8 @@ export class MemStorage implements IStorage {
   private messages: Map<string, Message>;
   private uploadedFiles: Map<string, UploadedFile>;
   private personaSelections: Map<string, PersonaSelection>;
+  private personaCaches: Map<string, PersonaCache>;
+  private requestLogs: Map<string, RequestLog>;
 
   constructor() {
     this.users = new Map();
@@ -212,6 +252,8 @@ export class MemStorage implements IStorage {
     this.messages = new Map();
     this.uploadedFiles = new Map();
     this.personaSelections = new Map();
+    this.personaCaches = new Map();
+    this.requestLogs = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -389,6 +431,38 @@ export class MemStorage implements IStorage {
 
   async getPersonaSelections(): Promise<PersonaSelection[]> {
     return Array.from(this.personaSelections.values());
+  }
+
+  // Persona cache methods
+  async createPersonaCache(insertCache: InsertPersonaCache): Promise<PersonaCache> {
+    const id = randomUUID();
+    const cache: PersonaCache = {
+      ...insertCache,
+      id,
+      createdAt: new Date()
+    };
+    this.personaCaches.set(insertCache.inputHash!, cache);
+    return cache;
+  }
+
+  async getPersonaCache(inputHash: string): Promise<PersonaCache | undefined> {
+    return this.personaCaches.get(inputHash);
+  }
+
+  // Request log methods
+  async createRequestLog(insertLog: InsertRequestLog): Promise<RequestLog> {
+    const id = randomUUID();
+    const log: RequestLog = {
+      ...insertLog,
+      id,
+      createdAt: new Date()
+    };
+    this.requestLogs.set(insertLog.requestHash!, log);
+    return log;
+  }
+
+  async getRequestLog(requestHash: string): Promise<RequestLog | undefined> {
+    return this.requestLogs.get(requestHash);
   }
 }
 
