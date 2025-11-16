@@ -1,0 +1,431 @@
+Nice, let’s wire this thing up properly. I’ll give you **all three**:
+
+* Monitoring (SQL + simple metrics pattern)
+* Tests (for caching, idempotency, streaming)
+* Dashboard (Grafana-style panels + helpful queries)
+
+You can copy-paste and adapt to your stack (Supabase/Neon/vanilla Postgres + Vitest/Jest + Grafana).
+
+---
+
+## 1️⃣ Monitoring: SQL Queries & Simple Metrics
+
+Assuming tables:
+
+* `persona_cache (id, input_hash, personas_json, created_at)`
+* `request_log (id, request_hash, response_json, created_at)`
+
+…and your existing `openai_logs` / `http_logs` table or something similar (if you don’t have one, I’ll show an ultra-light pattern).
+
+### 1.1 Core SQL: Persona Cache Metrics
+
+**A. Cache size & growth:**
+
+```sql
+-- Total cache entries
+SELECT COUNT(*) AS total_persona_cache_entries
+FROM persona_cache;
+
+-- Daily new persona cache entries (last 30 days)
+SELECT
+  DATE(created_at) AS day,
+  COUNT(*) AS new_entries
+FROM persona_cache
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY day
+ORDER BY day;
+```
+
+**B. Age distribution (how “stale” personas are):**
+
+```sql
+SELECT
+  CASE
+    WHEN created_at >= NOW() - INTERVAL '1 day' THEN '0-1 days'
+    WHEN created_at >= NOW() - INTERVAL '7 days' THEN '1-7 days'
+    WHEN created_at >= NOW() - INTERVAL '30 days' THEN '7-30 days'
+    ELSE '30+ days'
+  END AS age_bucket,
+  COUNT(*) AS count
+FROM persona_cache
+GROUP BY age_bucket
+ORDER BY
+  CASE age_bucket
+    WHEN '0-1 days' THEN 1
+    WHEN '1-7 days' THEN 2
+    WHEN '7-30 days' THEN 3
+    ELSE 4
+  END;
+```
+
+---
+
+### 1.2 Request Idempotency Metrics
+
+```sql
+-- Total deduped responses stored
+SELECT COUNT(*) AS total_idempotent_entries
+FROM request_log;
+
+-- Daily idempotent entries (proxy for duplicate-expensive requests)
+SELECT
+  DATE(created_at) AS day,
+  COUNT(*) AS requests_deduped
+FROM request_log
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY day
+ORDER BY day;
+```
+
+---
+
+### 1.3 Add an “AI Call Log” Table (If You Don’t Have One)
+
+This lets you see *real* OpenAI usage vs cached.
+
+**Schema:**
+
+```sql
+CREATE TABLE IF NOT EXISTS openai_call_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  endpoint TEXT NOT NULL,             -- e.g. 'personas.generate', 'chat.stream'
+  model TEXT NOT NULL,                -- 'gpt-5', 'dall-e-3'
+  tokens_prompt INT,
+  tokens_completion INT,
+  cost_usd NUMERIC(10,6),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Node helper (example):**
+
+```ts
+// src/lib/logOpenAICall.ts
+import { db } from "../db/client";
+import { openaiCallLog } from "../db/schema/openaiCallLog"; // your drizzle mapping
+
+export async function logOpenAICall(opts: {
+  endpoint: string;
+  model: string;
+  tokensPrompt?: number;
+  tokensCompletion?: number;
+  costUsd?: number;
+}) {
+  try {
+    await db.insert(openaiCallLog).values({
+      endpoint: opts.endpoint,
+      model: opts.model,
+      tokensPrompt: opts.tokensPrompt ?? null,
+      tokensCompletion: opts.tokensCompletion ?? null,
+      costUsd: opts.costUsd ?? null,
+    });
+  } catch (e) {
+    console.error("Failed to log OpenAI call", e);
+  }
+}
+```
+
+Call this right after each OpenAI request (persona gen, DALL·E, chat, etc.).
+
+**Key queries:**
+
+```sql
+-- Daily OpenAI cost estimate by endpoint (last 30 days)
+SELECT
+  DATE(created_at) AS day,
+  endpoint,
+  SUM(cost_usd) AS total_cost_usd
+FROM openai_call_log
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY day, endpoint
+ORDER BY day, endpoint;
+
+-- Aggregated cost by model
+SELECT
+  model,
+  SUM(cost_usd) AS total_cost_usd
+FROM openai_call_log
+GROUP BY model
+ORDER BY total_cost_usd DESC;
+```
+
+---
+
+## 2️⃣ Tests: Caching, Idempotency & Streaming
+
+I’ll assume **Vitest + SuperTest + Node 18+**. Adapt to Jest easily.
+
+### 2.1 Setup Test Server
+
+**`tests/server.test-setup.ts`**
+
+```ts
+import request from "supertest";
+import { app } from "../src/server"; // your Express app
+
+export const api = () => request(app);
+```
+
+---
+
+### 2.2 Persona Caching Test
+
+Goal: second call with identical input returns `fromCache: true` and executes faster.
+
+**`tests/personaCaching.test.ts`**
+
+```ts
+import { describe, it, expect } from "vitest";
+import { api } from "./server.test-setup";
+
+const payload = {
+  email: "test@example.com",
+  leadData: { age: 35, state: "CA" },
+  config: { numPersonas: 12 },
+};
+
+describe("Persona caching", () => {
+  it("returns fromCache=false on first call and true on second", async () => {
+    const start1 = Date.now();
+    const res1 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    const duration1 = Date.now() - start1;
+    expect(res1.body).toHaveProperty("personas");
+    expect(res1.body.fromCache).toBe(false);
+
+    const start2 = Date.now();
+    const res2 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    const duration2 = Date.now() - start2;
+    expect(res2.body.fromCache).toBe(true);
+    expect(res2.body.personas.length).toBe(res1.body.personas.length);
+
+    // Very rough heuristic: cached call should be significantly faster
+    expect(duration2).toBeLessThan(duration1);
+  });
+});
+```
+
+---
+
+### 2.3 Idempotency Test
+
+Goal: sending the *same* request twice returns identical response and does not error.
+
+**`tests/idempotency.test.ts`**
+
+```ts
+import { describe, it, expect } from "vitest";
+import { api } from "./server.test-setup";
+
+describe("Idempotency middleware", () => {
+  it("returns identical response for duplicate requests within window", async () => {
+    const payload = {
+      email: "idem@example.com",
+      leadData: { age: 40, state: "NY" },
+      config: { numPersonas: 6 },
+    };
+
+    const res1 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    const res2 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    // We added fromIdempotentCache flag in the wrapper when using stored result
+    expect(res2.body).toHaveProperty("fromIdempotentCache", true);
+
+    // Responses should match structurally
+    expect(res2.body.personas).toEqual(res1.body.personas);
+  });
+});
+```
+
+---
+
+### 2.4 Streaming Endpoint Test
+
+We just want to ensure it returns an SSE-compatible stream and not a full JSON body.
+
+**`tests/chatStream.test.ts`**
+
+```ts
+import { describe, it, expect } from "vitest";
+import { api } from "./server.test-setup";
+
+describe("Chat streaming", () => {
+  it("returns an event-stream response", async () => {
+    const res = await api()
+      .post("/api/chat/stream")
+      .send({
+        messages: [
+          { role: "system", content: "You are a test assistant." },
+          { role: "user", content: "Hello" },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    // Body should contain at least one "data:" line
+    expect(res.text).toContain("data:");
+  });
+});
+```
+
+Run with:
+
+```bash
+npx vitest tests/*.test.ts
+```
+
+---
+
+## 3️⃣ Dashboard: Grafana Panels (Concept + Queries)
+
+You don’t need to copy raw JSON, but here’s how to assemble a very clear **Cost & Cache** dashboard using Grafana (or any BI tool).
+
+### Panel 1: Daily OpenAI Cost (by Endpoint)
+
+**Type:** Time series
+**Query:**
+
+```sql
+SELECT
+  $__timeGroup(created_at, '1d') AS time,
+  endpoint,
+  SUM(cost_usd) AS value
+FROM openai_call_log
+WHERE $__timeFilter(created_at)
+GROUP BY time, endpoint
+ORDER BY time;
+```
+
+**Y-axis:** USD
+**Legend:** `{{endpoint}}`
+
+---
+
+### Panel 2: Persona Cache Growth
+
+**Type:** Bar chart
+**Query:**
+
+```sql
+SELECT
+  $__timeGroup(created_at, '1d') AS time,
+  COUNT(*) AS value
+FROM persona_cache
+WHERE $__timeFilter(created_at)
+GROUP BY time
+ORDER BY time;
+```
+
+Interpretation:
+
+* Spikes = new unique persona sets
+* Flat line over time = stable configuration, high reuse
+
+---
+
+### Panel 3: Idempotent Requests (Deduped)
+
+**Type:** Time series
+**Query:**
+
+```sql
+SELECT
+  $__timeGroup(created_at, '1d') AS time,
+  COUNT(*) AS value
+FROM request_log
+WHERE $__timeFilter(created_at)
+GROUP BY time
+ORDER BY time;
+```
+
+Interpretation:
+
+* Each log row ≈ one “saved” expensive call (depending where you attach the wrapper).
+
+---
+
+### Panel 4: Model Cost Breakdown
+
+**Type:** Pie or Table
+**Query:**
+
+```sql
+SELECT
+  model,
+  SUM(cost_usd) AS total_cost_usd
+FROM openai_call_log
+GROUP BY model
+ORDER BY total_cost_usd DESC;
+```
+
+Let’s you see when/if you start using additional models.
+
+---
+
+### Panel 5: Cache Hit Ratio (Persona Endpoint)
+
+This one is more logical than direct SQL, but we can approximate:
+
+* In your `persona_cache` you know **how many unique persona sets exist**.
+* In request logs / openai_call_log you know **how many persona generation calls** hit OpenAI.
+
+So, an approximate ratio:
+
+```sql
+-- denominator: persona endpoint calls
+WITH persona_calls AS (
+  SELECT COUNT(*) AS num_calls
+  FROM openai_call_log
+  WHERE endpoint = 'personas.generate'
+),
+-- numerator: unique persona sets (rough proxy for misses)
+persona_misses AS (
+  SELECT COUNT(*) AS num_unique_sets
+  FROM persona_cache
+)
+SELECT
+  num_calls,
+  num_unique_sets,
+  1.0 - (num_unique_sets::decimal / GREATEST(num_calls,1)) AS cache_hit_ratio
+FROM persona_calls, persona_misses;
+```
+
+Pin this as a **stat panel** (0–100%).
+
+---
+
+## Putting It All Together
+
+You now have:
+
+* **Monitoring**
+
+  * SQL to track cache growth, idempotent usage, and OpenAI cost.
+  * Optional `openai_call_log` schema & helper.
+* **Tests**
+
+  * Persona caching behaviour.
+  * Idempotency correctness.
+  * Streaming endpoint health.
+* **Dashboards**
+
+  * Clear visualizations for cost, cache, and efficiency in Grafana (or Supabase UI / Metabase).
+
+If you’d like, next step I can:
+
+* Convert one of these queries into **exact Grafana JSON panel config**, or
+* Add a **GitHub Actions CI snippet** that runs the Vitest suite automatically on every push/PR.
