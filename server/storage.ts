@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, type PersonaSelection, type InsertPersonaSelection, type PersonaCache, type InsertPersonaCache, type RequestLog, type InsertRequestLog, users, leads, personas, recommendations, conversations, messages, uploadedFiles, personaSelections, personaCache, requestLog } from "@shared/schema";
+import { type User, type InsertUser, type Lead, type InsertLead, type Persona, type InsertPersona, type Recommendation, type InsertRecommendation, type Conversation, type Message, type UploadedFile, type InsertConversation, type InsertMessage, type InsertUploadedFile, type PersonaSelection, type InsertPersonaSelection, type PersonaCache, type InsertPersonaCache, type RequestLog, type InsertRequestLog, type OpenaiCallLog, type InsertOpenaiCallLog, users, leads, personas, recommendations, conversations, messages, uploadedFiles, personaSelections, personaCache, requestLog, openaiCallLog } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
@@ -44,6 +44,9 @@ export interface IStorage {
   // Request log methods (idempotency)
   createRequestLog(log: InsertRequestLog): Promise<RequestLog>;
   getRequestLog(requestHash: string): Promise<RequestLog | undefined>;
+  
+  // OpenAI call log methods (monitoring)
+  createOpenAICallLog(log: InsertOpenaiCallLog): Promise<OpenaiCallLog>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -228,6 +231,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(requestLog.requestHash, requestHash));
     return log || undefined;
   }
+
+  async createOpenAICallLog(insertLog: InsertOpenaiCallLog): Promise<OpenaiCallLog> {
+    const [log] = await this.db
+      .insert(openaiCallLog)
+      .values(insertLog)
+      .returning();
+    return log;
+  }
 }
 
 // Keep MemStorage for fallback
@@ -242,6 +253,7 @@ export class MemStorage implements IStorage {
   private personaSelections: Map<string, PersonaSelection>;
   private personaCaches: Map<string, PersonaCache>;
   private requestLogs: Map<string, RequestLog>;
+  private openaiCallLogs: Map<string, OpenaiCallLog>;
 
   constructor() {
     this.users = new Map();
@@ -254,6 +266,7 @@ export class MemStorage implements IStorage {
     this.personaSelections = new Map();
     this.personaCaches = new Map();
     this.requestLogs = new Map();
+    this.openaiCallLogs = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -463,6 +476,20 @@ export class MemStorage implements IStorage {
 
   async getRequestLog(requestHash: string): Promise<RequestLog | undefined> {
     return this.requestLogs.get(requestHash);
+  }
+
+  async createOpenAICallLog(insertLog: InsertOpenaiCallLog): Promise<OpenaiCallLog> {
+    const id = randomUUID();
+    const log: OpenaiCallLog = {
+      ...insertLog,
+      id,
+      tokensPrompt: insertLog.tokensPrompt ?? null,
+      tokensCompletion: insertLog.tokensCompletion ?? null,
+      costUsd: insertLog.costUsd ?? null,
+      createdAt: new Date()
+    };
+    this.openaiCallLogs.set(id, log);
+    return log;
   }
 }
 

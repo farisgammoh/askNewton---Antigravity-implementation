@@ -1,0 +1,513 @@
+Love it. Let’s treat this as “implement everything.” I’ll give you **drop-in files/patches** you can paste into AskNewton.
+
+---
+
+## 1. Database: `openai_call_log` Table
+
+### 1.1 Drizzle schema
+
+**`src/db/schema/openaiCallLog.ts`**
+
+```ts
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  numeric,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+export const openaiCallLog = pgTable("openai_call_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+
+  endpoint: text("endpoint").notNull(),   // e.g. 'personas.generate', 'chat.stream'
+  model: text("model").notNull(),         // e.g. 'gpt-5', 'dall-e-3'
+
+  tokensPrompt: integer("tokens_prompt"),
+  tokensCompletion: integer("tokens_completion"),
+  costUsd: numeric("cost_usd", { precision: 10, scale: 6 }),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+```
+
+Add to your schema index:
+
+```ts
+// src/db/schema/index.ts
+export * from "./openaiCallLog";
+// ...existing exports
+```
+
+Run migration with your usual flow (e.g. `npm run db:push` or drizzle migration command).
+
+---
+
+## 2. Helper: `logOpenAICall` + Integrations
+
+### 2.1 Logging helper
+
+**`src/lib/logOpenAICall.ts`**
+
+```ts
+import { db } from "../db/client";
+import { openaiCallLog } from "../db/schema/openaiCallLog";
+
+type LogOpenAICallParams = {
+  endpoint: string;
+  model: string;
+  tokensPrompt?: number;
+  tokensCompletion?: number;
+  costUsd?: number;
+};
+
+export async function logOpenAICall({
+  endpoint,
+  model,
+  tokensPrompt,
+  tokensCompletion,
+  costUsd,
+}: LogOpenAICallParams) {
+  try {
+    await db.insert(openaiCallLog).values({
+      endpoint,
+      model,
+      tokensPrompt: tokensPrompt ?? null,
+      tokensCompletion: tokensCompletion ?? null,
+      costUsd: costUsd ?? null,
+    });
+  } catch (err) {
+    console.error("Failed to log OpenAI call", err);
+  }
+}
+```
+
+> If you’re not computing exact cost/token yet, just pass `undefined` and it’ll store `NULL`.
+
+---
+
+### 2.2 Integrate in persona generation
+
+Assuming you have `generatePersonasWithCaching` from earlier:
+
+**`src/services/personas.ts`** (add logging)
+
+```ts
+import { logOpenAICall } from "../lib/logOpenAICall";
+
+// ...within generatePersonasWithCaching, after completion:
+
+const completion = await openai.chat.completions.create({
+  model: "gpt-5",
+  messages: [
+    {
+      role: "system",
+      content:
+        "You are AskNewton’s persona generator. Output strict JSON: an array of persona objects.",
+    },
+    {
+      role: "user",
+      content: JSON.stringify({ leadData, config }),
+    },
+  ],
+});
+
+// If you use the v4 SDK with usage info:
+const usage = (completion as any).usage;
+await logOpenAICall({
+  endpoint: "personas.generate",
+  model: "gpt-5",
+  tokensPrompt: usage?.prompt_tokens,
+  tokensCompletion: usage?.completion_tokens,
+  // Optional: plug in your own cost calculation here
+  costUsd: undefined,
+});
+```
+
+---
+
+### 2.3 Integrate in DALL·E image generation
+
+**`src/services/personaImages.ts`**
+
+```ts
+import { logOpenAICall } from "../lib/logOpenAICall";
+
+// inside ensurePersonaImages loop, after imageResp:
+
+const imageResp = await openai.images.generate({
+  model: "dall-e-3",
+  prompt,
+  size: "1024x1024",
+  n: 1,
+  response_format: "b64_json",
+});
+
+// v4 images API doesn’t expose tokens; we just log usage by call:
+await logOpenAICall({
+  endpoint: "personas.images.generate",
+  model: "dall-e-3",
+  // You can estimate cost per call if you like:
+  costUsd: undefined,
+});
+```
+
+---
+
+### 2.4 Integrate in chat streaming endpoint
+
+**`server/chatRoutes.ts`**
+
+```ts
+import { logOpenAICall } from "../src/lib/logOpenAICall";
+
+// ...
+
+router.post("/api/chat/stream", async (req, res, next) => {
+  try {
+    const { messages } = req.body;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const stream = await openai.chat.completions.create({
+      model: "gpt-5",
+      messages,
+      stream: true,
+    });
+
+    // usage is only available after the full stream finishes; we can accumulate tokens if needed
+    let totalPromptTokens: number | undefined;
+    let totalCompletionTokens = 0;
+
+    for await (const chunk of stream) {
+      const choice = chunk.choices[0];
+      const content = choice?.delta?.content;
+      if (content) {
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      }
+
+      const usage = (chunk as any).usage;
+      if (usage?.prompt_tokens && totalPromptTokens == null) {
+        totalPromptTokens = usage.prompt_tokens;
+      }
+      if (usage?.completion_tokens) {
+        totalCompletionTokens += usage.completion_tokens;
+      }
+    }
+
+    // Log after stream
+    await logOpenAICall({
+      endpoint: "chat.stream",
+      model: "gpt-5",
+      tokensPrompt: totalPromptTokens,
+      tokensCompletion: totalCompletionTokens || undefined,
+      costUsd: undefined,
+    });
+
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+  } catch (err) {
+    next(err);
+  }
+});
+```
+
+(If your SDK/plan doesn’t give usage on streaming, you can still log per-call without tokens.)
+
+---
+
+## 3. Vitest Test Suite Files
+
+Assume `Vitest + SuperTest` and `app` exported from `src/server`.
+
+### 3.1 Test setup
+
+**`tests/server.setup.ts`**
+
+```ts
+import request from "supertest";
+import { app } from "../src/server"; // adjust path if needed
+
+export const api = () => request(app);
+```
+
+---
+
+### 3.2 `personaCaching.test.ts`
+
+```ts
+import { describe, it, expect } from "vitest";
+import { api } from "./server.setup";
+
+const payload = {
+  email: "cache-test@example.com",
+  leadData: { age: 35, state: "CA" },
+  config: { numPersonas: 12 },
+};
+
+describe("Persona caching", () => {
+  it("returns fromCache=false on first call and true on second", async () => {
+    const start1 = Date.now();
+    const res1 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    const duration1 = Date.now() - start1;
+    expect(res1.body).toHaveProperty("personas");
+    expect(res1.body.fromCache).toBe(false);
+
+    const start2 = Date.now();
+    const res2 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    const duration2 = Date.now() - start2;
+    expect(res2.body.fromCache).toBe(true);
+    expect(res2.body.personas.length).toBe(res1.body.personas.length);
+
+    // Cached version should be faster in most environments
+    expect(duration2).toBeLessThan(duration1);
+  });
+});
+```
+
+---
+
+### 3.3 `idempotency.test.ts`
+
+Assuming you wrapped `/api/personas/generate` with `withIdempotency` and it adds `fromIdempotentCache` when replayed:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { api } from "./server.setup";
+
+describe("Idempotency middleware", () => {
+  it("returns identical response for duplicate requests within window", async () => {
+    const payload = {
+      email: "idem-test@example.com",
+      leadData: { age: 40, state: "NY" },
+      config: { numPersonas: 6 },
+    };
+
+    const res1 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    const res2 = await api()
+      .post("/api/personas/generate")
+      .send(payload)
+      .expect(200);
+
+    expect(res2.body.personas).toEqual(res1.body.personas);
+    expect(res2.body).toHaveProperty("fromIdempotentCache", true);
+  });
+});
+```
+
+(if your idempotency wrapper uses a different flag, adjust that property name.)
+
+---
+
+### 3.4 `chatStream.test.ts`
+
+```ts
+import { describe, it, expect } from "vitest";
+import { api } from "./server.setup";
+
+describe("Chat streaming", () => {
+  it("responds with event-stream content type", async () => {
+    const res = await api()
+      .post("/api/chat/stream")
+      .send({
+        messages: [
+          { role: "system", content: "You are a test assistant." },
+          { role: "user", content: "Hello" },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.text).toContain("data:");
+  });
+});
+```
+
+Add to `package.json`:
+
+```json
+"scripts": {
+  "test": "vitest"
+}
+```
+
+---
+
+## 4. Monitoring Doc: `MONITORING_AND_DASHBOARD.md`
+
+Here’s a ready markdown doc you can drop in the repo root:
+
+**`MONITORING_AND_DASHBOARD.md`**
+
+````md
+# AskNewton – Cost Optimization Monitoring & Dashboards
+
+This document describes how to monitor OpenAI usage, cache performance, and idempotent request savings.
+
+---
+
+## 1. Database Tables
+
+### 1.1 `openai_call_log`
+
+Tracks each OpenAI call.
+
+- `endpoint` – logical name, e.g. `personas.generate`, `chat.stream`
+- `model` – `gpt-5`, `dall-e-3`, etc.
+- `tokens_prompt`, `tokens_completion` – optional, if available
+- `cost_usd` – optional, if we estimate cost
+
+### 1.2 `persona_cache`
+
+Tracks unique persona input sets and their cached personas.
+
+### 1.3 `request_log`
+
+Tracks idempotent responses for expensive endpoints.
+
+---
+
+## 2. Core Monitoring Queries
+
+### 2.1 Persona Cache Metrics
+
+**Total cache entries:**
+
+```sql
+SELECT COUNT(*) AS total_persona_cache_entries
+FROM persona_cache;
+````
+
+**New entries per day (last 30 days):**
+
+```sql
+SELECT
+  DATE(created_at) AS day,
+  COUNT(*) AS new_entries
+FROM persona_cache
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY day
+ORDER BY day;
+```
+
+**Age distribution:**
+
+```sql
+SELECT
+  CASE
+    WHEN created_at >= NOW() - INTERVAL '1 day' THEN '0-1 days'
+    WHEN created_at >= NOW() - INTERVAL '7 days' THEN '1-7 days'
+    WHEN created_at >= NOW() - INTERVAL '30 days' THEN '7-30 days'
+    ELSE '30+ days'
+  END AS age_bucket,
+  COUNT(*) AS count
+FROM persona_cache
+GROUP BY age_bucket
+ORDER BY
+  CASE age_bucket
+    WHEN '0-1 days' THEN 1
+    WHEN '1-7 days' THEN 2
+    WHEN '7-30 days' THEN 3
+    ELSE 4
+  END;
+```
+
+### 2.2 Idempotent Requests
+
+```sql
+SELECT
+  DATE(created_at) AS day,
+  COUNT(*) AS requests_deduped
+FROM request_log
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY day
+ORDER BY day;
+```
+
+### 2.3 OpenAI Cost (if `cost_usd` is filled)
+
+**Daily cost by endpoint (last 30 days):**
+
+```sql
+SELECT
+  DATE(created_at) AS day,
+  endpoint,
+  SUM(cost_usd) AS total_cost_usd
+FROM openai_call_log
+WHERE created_at >= NOW() - INTERVAL '30 days'
+GROUP BY day, endpoint
+ORDER BY day, endpoint;
+```
+
+**Cost by model:**
+
+```sql
+SELECT
+  model,
+  SUM(cost_usd) AS total_cost_usd
+FROM openai_call_log
+GROUP BY model
+ORDER BY total_cost_usd DESC;
+```
+
+### 2.4 Approximate Persona Cache Hit Ratio
+
+```sql
+WITH persona_calls AS (
+  SELECT COUNT(*) AS num_calls
+  FROM openai_call_log
+  WHERE endpoint = 'personas.generate'
+),
+persona_misses AS (
+  SELECT COUNT(*) AS num_unique_sets
+  FROM persona_cache
+)
+SELECT
+  num_calls,
+  num_unique_sets,
+  1.0 - (num_unique_sets::decimal / GREATEST(num_calls,1)) AS cache_hit_ratio
+FROM persona_calls, persona_misses;
+```
+
+---
+
+## 3. Grafana / BI Dashboard Panels
+
+You can plug the above queries into Grafana (Postgres source) with:
+
+1. **Daily OpenAI Cost (by endpoint)** – time series
+2. **Persona Cache Growth** – bar chart
+3. **Idempotent Requests Over Time** – time series
+4. **Cost by Model** – pie or table
+5. **Persona Cache Hit Ratio** – single stat panel
+
+Use `openai_call_log.created_at` as the time column and Grafana’s `$__timeFilter` + `$__timeGroup` helpers if desired.
+
+```
+
+---
+
+You can now:
+
+- Run migration for `openai_call_log`
+- Drop in `logOpenAICall` and the route integrations
+- Add the three Vitest test files
+- Commit `MONITORING_AND_DASHBOARD.md`
+
+If you paste me your actual `src/server.ts` file later, I can also wire all imports and exports line-by-line so there’s zero guesswork.
+```

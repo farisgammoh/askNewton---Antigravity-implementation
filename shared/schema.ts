@@ -330,3 +330,17 @@ export const requestLog = pgTable("request_log", {
 
 export type RequestLog = typeof requestLog.$inferSelect;
 export type InsertRequestLog = typeof requestLog.$inferInsert;
+
+// OpenAI Call Log table - for monitoring AI usage and costs
+export const openaiCallLog = pgTable("openai_call_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  endpoint: text("endpoint").notNull(), // e.g. 'personas.generate', 'chat.stream'
+  model: text("model").notNull(), // e.g. 'gpt-5', 'dall-e-3'
+  tokensPrompt: text("tokens_prompt"), // storing as text for flexibility
+  tokensCompletion: text("tokens_completion"),
+  costUsd: text("cost_usd"), // storing as text to avoid numeric precision issues
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
+});
+
+export type OpenaiCallLog = typeof openaiCallLog.$inferSelect;
+export type InsertOpenaiCallLog = typeof openaiCallLog.$inferInsert;

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { PersonaFormData } from "@shared/schema";
+import { logOpenAICall } from "../lib/logOpenAICall";
 
 /*
 Follow these instructions when using this blueprint:
@@ -152,6 +153,15 @@ Respond with a JSON object containing an array of personas:
         throw new Error("Invalid response format from OpenAI");
       }
 
+      // Log OpenAI usage for monitoring
+      await logOpenAICall({
+        endpoint: "personas.generate",
+        model: this.model,
+        tokensPrompt: response.usage?.prompt_tokens,
+        tokensCompletion: response.usage?.completion_tokens,
+        costUsd: undefined
+      });
+
       console.log(`✅ Generated ${result.personas.length} AI personas using Newtonian principles`);
       return result.personas;
 
@@ -251,6 +261,15 @@ Respond with a JSON object:
       if (!result.recommendation) {
         throw new Error("Invalid recommendation response from OpenAI");
       }
+
+      // Log OpenAI usage for monitoring
+      await logOpenAICall({
+        endpoint: "recommendations.generate",
+        model: this.model,
+        tokensPrompt: response.usage?.prompt_tokens,
+        tokensCompletion: response.usage?.completion_tokens,
+        costUsd: undefined
+      });
 
       console.log(`✅ Generated personalized recommendation from ${persona.name} for ${leadData.name}`);
       return result;
@@ -355,6 +374,15 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
         throw new Error("No response generated");
       }
 
+      // Log OpenAI usage for monitoring
+      await logOpenAICall({
+        endpoint: "chat.completion",
+        model: this.model,
+        tokensPrompt: completion.usage?.prompt_tokens,
+        tokensCompletion: completion.usage?.completion_tokens,
+        costUsd: undefined
+      });
+
       return response;
     } catch (error) {
       console.error("OpenAI chat completion error:", error);
@@ -388,6 +416,13 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
 
       const imageUrl = response.data?.[0]?.url;
       if (imageUrl) {
+        // Log OpenAI usage for monitoring (DALL-E doesn't provide token counts)
+        await logOpenAICall({
+          endpoint: "personas.images.generate",
+          model: "dall-e-3",
+          costUsd: undefined
+        });
+        
         console.log(`✅ Generated persona image for ${personaName}`);
         return imageUrl;
       }
