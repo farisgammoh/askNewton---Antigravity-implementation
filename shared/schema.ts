@@ -342,5 +342,20 @@ export const openaiCallLog = pgTable("openai_call_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow()
 });
 
+// OpenAI Call Log schemas
+export const insertOpenaiCallLogSchema = createInsertSchema(openaiCallLog).omit({
+  id: true,
+  createdAt: true
+});
+
+export const openaiCallLogSchema = z.object({
+  endpoint: z.string().min(1, "Endpoint is required"),
+  model: z.string().min(1, "Model is required"),
+  tokensPrompt: z.string().optional(),
+  tokensCompletion: z.string().optional(),
+  costUsd: z.string().optional()
+});
+
+export type InsertOpenaiCallLog = z.infer<typeof insertOpenaiCallLogSchema>;
 export type OpenaiCallLog = typeof openaiCallLog.$inferSelect;
-export type InsertOpenaiCallLog = typeof openaiCallLog.$inferInsert;
+export type OpenaiCallLogFormData = z.infer<typeof openaiCallLogSchema>;

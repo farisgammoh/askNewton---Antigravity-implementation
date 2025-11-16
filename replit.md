@@ -195,6 +195,42 @@ The application includes comprehensive cost optimization features to reduce Open
 - Complete implementation guide: `COST_OPTIMIZATION_SUMMARY.md`
 - Migration steps, troubleshooting, and monitoring guidelines included
 
+## Monitoring and Testing Infrastructure
+
+**Status**: ✅ Implemented (January 2025)
+
+The application includes comprehensive monitoring infrastructure to track OpenAI usage, costs, and cache performance:
+
+**Database Logging:**
+- `openai_call_log` table tracks all AI API calls with endpoint, model, tokens, and cost data
+- Integrated logging in all OpenAI service methods (persona generation, recommendations, chat, images)
+- Non-blocking async logging to avoid impacting request performance
+
+**Monitoring Capabilities:**
+- SQL queries for cache hit rates, cost analysis, and usage patterns
+- Grafana-ready dashboard configurations for visualization
+- Daily/weekly/monthly cost tracking and optimization insights
+- Performance metrics for persona caching and request idempotency
+
+**Test Suite:**
+- Vitest test files for persona caching, idempotency, and streaming endpoints
+- Integration tests verify cache hit/miss behavior and deduplication
+- SSE streaming endpoint validation
+- Template for future unit tests with mocking
+
+**Documentation:**
+- Complete monitoring guide: `MONITORING_AND_DASHBOARD.md`
+- SQL queries for all monitoring metrics
+- Cost estimation formulas and alert recommendations
+- Best practices for tracking AI usage and optimizing costs
+
+**Key Metrics Tracked:**
+- Total OpenAI API calls by endpoint and model
+- Token usage (prompt and completion) when available
+- Persona cache hit ratio and growth over time
+- Idempotent request deduplication savings
+- Cost trends and anomaly detection
+
 # External Dependencies
 
 ## Third-Party Services
