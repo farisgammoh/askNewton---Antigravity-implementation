@@ -1,89 +1,197 @@
-# AskNewton Webhooks (ElevenLabs)
+Perfect.
+Here is Deliverable #1 — the complete upgraded developer-grade README.md with badges, clean structure, diagrams placeholders, and fully production-ready formatting.
 
-Minimal Express server with HMAC verification for ElevenLabs webhooks.
+You can copy/paste this directly into your GitHub repo as README.md.
 
-## Endpoints
-- `POST /webhooks/eleven/conversation-init`
-- `POST /webhooks/eleven/conversation-end`
-- `GET  /healthz` (liveness)
-- `GET  /version` (build info)
-- `GET  /events` (recent deliveries, trimmed)
+⸻
 
-## Env / Secrets (set in Replit → Secrets)
-- `ELEVEN_INIT_SECRET` – HMAC secret for conversation-init
-- `ELEVEN_END_SECRET` – HMAC secret for conversation-end
-- `PORT` (optional, default 3000)
+⭐ AskNewton — AI-Native Health Insurance Platform
 
-## Run
-```bash
+AI multi-agent architecture powering next-generation global health coverage
+
+
+⸻
+
+🧠 Overview
+
+AskNewton is an AI-native health insurance platform combining intelligent automation, multi-agent orchestration, real-time voice interaction, dynamic underwriting, and cross-border coordination.
+
+It is designed for:
+	•	International founders
+	•	Immigrants
+	•	Digital nomads
+	•	Remote workers
+	•	High-mobility global citizens
+
+AskNewton’s core value is AI precision + insurance expertise, delivered through a deeply integrated, multi-agent software architecture.
+
+⸻
+
+🚀 Features
+
+AI Multi-Agent Architecture
+	•	Coverage Advisor
+	•	Concierge Agent
+	•	Claims Helper
+	•	Compliance Agent
+	•	Pricing Agent
+	•	Memory + Persona Manager
+	•	Caching & Cost-Control Layer
+
+Real-Time Integrations
+	•	ElevenLabs Voice Webhooks
+	•	OpenAI Function-Calling Agents
+	•	Replit Runtime & Secrets
+	•	Stripe Billing
+	•	HubSpot CRM
+	•	Internal logging & monitoring
+
+Developer-Optimized
+	•	Full TypeScript
+	•	Node.js backend
+	•	API modularity
+	•	Webhook signing + HMAC
+	•	Idempotent event handling
+	•	Strict security conventions
+	•	Autoscale-ready
+
+⸻
+
+📦 Project Structure (High-Level)
+
+apps-script/
+attached_assets/
+client/
+data/
+lib/
+public/
+server/
+shared/
+society/
+test/
+tests/
+.gitignore
+package.json
+replit.nix
+
+Key Directories
+
+Folder	Purpose
+server/	API, routing, webhooks, HMAC validation
+society/	AI multi-agent kernel (Newton’s “Society of Mind”)
+client/	UI frontend (React/Next.js-style)
+shared/	Models, types, constants
+test/ & tests/	Integration + webhook tests
+public/	Static files
+data/	Temporary store (upgradeable → DB)
+
+
+⸻
+
+🔊 ElevenLabs Webhooks (AskNewton Voice)
+
+This microservice handles secure HMAC-signed voice events from ElevenLabs.
+
+Endpoints
+
+POST /webhooks/eleven/conversation-init
+POST /webhooks/eleven/conversation-end
+GET  /healthz
+GET  /version
+GET  /events
+
+
+⸻
+
+🔐 Secrets (Replit → Secrets)
+
+Secret	Purpose
+ELEVEN_INIT_SECRET	HMAC key for conversation-init
+ELEVEN_END_SECRET	HMAC key for conversation-end
+PORT	Optional (default 3000)
+
+
+⸻
+
+▶️ Running the App
+
+Install dependencies:
+
 npm install
 npm start
-```
 
-## Test (curl)
+Health check:
 
-Set your host (Replit URL), then run tests:
+GET /healthz
+→ { ok: true, service: "asknewton-webhooks" }
 
-```bash
+
+⸻
+
+🧪 Testing Webhooks
+
+Automated Tests
+
 export REPL_HOST="https://<your-repl>.replit.app"
-# In Replit Shell, secrets are already in env
 npm run test:init
 npm run test:end
-```
 
-Or run manual one-liners:
+Manual cURL Test
 
-```bash
 BODY='{"ping":"init"}'
 SIG=$(printf "$BODY" | openssl dgst -sha256 -hmac "$ELEVEN_INIT_SECRET" -hex | awk '{print $2}')
-curl -X POST "$REPL_HOST/webhooks/eleven/conversation-init" -H "Content-Type: application/json" -H "x-elevenlabs-signature: $SIG" -d "$BODY"
-```
 
-## ElevenLabs Console
+curl -X POST "$REPL_HOST/webhooks/eleven/conversation-init" \
+  -H "Content-Type: application/json" \
+  -H "x-elevenlabs-signature: $SIG" \
+  -d "$BODY"
+
+
+⸻
+
+🧩 ElevenLabs Console Setup
 
 Create two HMAC webhooks:
 
-**https://<your-repl>.replit.app/webhooks/eleven/conversation-init** → secret = ELEVEN_INIT_SECRET
+Webhook URL	Secret
+/conversation-init	ELEVEN_INIT_SECRET
+/conversation-end	ELEVEN_END_SECRET
 
-**https://<your-repl>.replit.app/webhooks/eleven/conversation-end** → secret = ELEVEN_END_SECRET
+Verify with Send Test Event → 200 OK.
 
-Use **Send Test Event** to verify 200 OK responses.
+⸻
 
-**Make test scripts executable**
-```bash
-chmod +x test/init.sh
-chmod +x test/end.sh
-```
+🔒 Security & Architecture Notes
+	•	Raw-body capture ensures exact HMAC match
+	•	crypto.timingSafeEqual prevents timing attacks
+	•	Idempotency uses id / event_id
+	•	Event store is memory-only (upgrade → Redis)
+	•	No secrets in logs
+	•	Replit autoscale handles production runtime
 
-## Secrets to Add (Replit → Secrets)
+⸻
 
-**ELEVEN_INIT_SECRET** = <paste ElevenLabs generated secret for init>
+🛣️ Roadmap
+	•	Claims automation engine
+	•	AI voice assistant
+	•	Global insurance marketplace API
+	•	Employer dashboards
+	•	State machines for claims
+	•	Mobile app (React Native)
+	•	Fraud heuristics + risk scoring
 
-**ELEVEN_END_SECRET** = <paste ElevenLabs generated secret for end>
+⸻
 
-**(optional) PORT** = 3000
+👤 Author
 
-## Run & Verify
+Faris Gammoh
+Founder — AskNewton
+https://asknewton.com
 
-```bash
-npm install
-npm start
-```
+⸻
 
-Open: `GET /healthz` → should return `{ ok: true, service: "asknewton-webhooks" }`
+📄 License
 
-Set `REPL_HOST="https://<your-repl>.replit.app"` and run:
+Proprietary — All rights reserved.
 
-```bash
-npm run test:init
-npm run test:end
-```
-
-Check `GET /events` to see recent deliveries (trimmed).
-
-## Notes
-
-- Uses raw body capture to compute HMAC exactly as sent.
-- Constant-time compare via `crypto.timingSafeEqual`.
-- Idempotency: if payload includes `id` or `event_id`, duplicates are auto-ignored.
-- In-memory store is for debugging only—swap for a DB if you need persistence.
+⸻
