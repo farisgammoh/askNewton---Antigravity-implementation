@@ -1,10 +1,3 @@
-Perfect.
-Here is Deliverable #1 — the complete upgraded developer-grade README.md with badges, clean structure, diagrams placeholders, and fully production-ready formatting.
-
-You can copy/paste this directly into your GitHub repo as README.md.
-
-⸻
-
 ⭐ AskNewton — AI-Native Health Insurance Platform
 
 AI multi-agent architecture powering next-generation global health coverage
