@@ -13,7 +13,7 @@ export interface SecurityConfig {
 
 export function setupSecurityMiddleware(app: Express, config: SecurityConfig = {}) {
   const {
-    allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5000', 'https://*.replit.app', 'https://*.repl.co'],
+    allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5000', 'http://127.0.0.1:5000', 'https://*.replit.app', 'https://*.repl.co'],
     maxBodySize = '10mb',
     enableRateLimit = true
   } = config;
@@ -24,10 +24,10 @@ export function setupSecurityMiddleware(app: Express, config: SecurityConfig = {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "https:", "blob:"],
         connectSrc: ["'self'", "https:", "wss:"],
-        fontSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
         frameSrc: ["'none'"],
@@ -52,13 +52,16 @@ export function setupSecurityMiddleware(app: Express, config: SecurityConfig = {
       // Allow requests with no origin (like mobile apps or curl)
       if (!origin) return callback(null, true);
       
+      // Remove port number from origin for matching (Replit dev URLs include :5000)
+      const originWithoutPort = origin.replace(/:\d+$/, '');
+      
       // Check if origin matches allowed patterns
       const isAllowed = allowedOrigins.some(allowed => {
         if (allowed.includes('*')) {
           const pattern = allowed.replace(/\*/g, '.*');
-          return new RegExp(`^${pattern}$`).test(origin);
+          return new RegExp(`^${pattern}$`).test(originWithoutPort) || new RegExp(`^${pattern}$`).test(origin);
         }
-        return allowed === origin;
+        return allowed === origin || allowed === originWithoutPort;
       });
       
       if (isAllowed) {
