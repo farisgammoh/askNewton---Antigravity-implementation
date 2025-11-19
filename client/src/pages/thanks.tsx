@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useState, useEffect } from "react";
+import Layout from "@/components/marketing/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, Brain, ArrowRight } from "lucide-react";
@@ -25,7 +26,12 @@ export default function Thanks() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto text-center">
+    <Layout
+      title="Thank You - AskNewton"
+      description="Your health insurance assessment is complete. We're preparing your personalized recommendations."
+      canonical="https://asknewton.com/thanks"
+    >
+      <div className="max-w-2xl mx-auto text-center">
       <div className="mb-8">
         <div className="w-16 h-16 bg-accent rounded-full flex items-center justify-center mx-auto mb-6">
           <Check className="w-8 h-8 text-accent-foreground" />
@@ -118,6 +124,7 @@ export default function Thanks() {
           </a>.
         </p>
       </div>
-    </div>
+      </div>
+    </Layout>
   );
 }

@@ -1,10 +1,16 @@
 import { Link } from "wouter";
+import Layout from "@/components/marketing/layout";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 
 export default function Terms() {
   return (
-    <div className="max-w-4xl mx-auto">
+    <Layout
+      title="Terms of Service - AskNewton"
+      description="Terms of Service for AskNewton health insurance guidance platform for California newcomers."
+      canonical="https://asknewton.com/legal/terms"
+    >
+      <div className="max-w-4xl mx-auto">
       <Link href="/">
         <Button variant="ghost" className="mb-6" data-testid="button-back-home">
           <ChevronLeft className="w-4 h-4 mr-2" />
@@ -46,6 +52,7 @@ export default function Terms() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Layout>
   );
 }

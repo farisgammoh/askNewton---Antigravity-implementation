@@ -1,10 +1,16 @@
 import { Link } from "wouter";
+import Layout from "@/components/marketing/layout";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 
 export default function Privacy() {
   return (
-    <div className="max-w-4xl mx-auto">
+    <Layout
+      title="Privacy Policy - AskNewton"
+      description="Privacy Policy for AskNewton health insurance guidance platform. Learn how we protect your personal information."
+      canonical="https://asknewton.com/legal/privacy"
+    >
+      <div className="max-w-4xl mx-auto">
       <Link href="/">
         <Button variant="ghost" className="mb-6" data-testid="button-back-home">
           <ChevronLeft className="w-4 h-4 mr-2" />
@@ -68,6 +74,7 @@ export default function Privacy() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Layout>
   );
 }

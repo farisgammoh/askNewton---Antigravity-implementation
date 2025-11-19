@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import Layout from "@/components/marketing/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -314,8 +315,13 @@ function PersonasPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <div className="container mx-auto px-4 py-12">
+    <Layout
+      title="AI Insurance Experts - AskNewton"
+      description="Meet our specially trained AI insurance experts. Choose the perfect specialist for your health insurance needs in California."
+      canonical="https://asknewton.com/personas"
+    >
+      <div className="bg-gradient-to-br from-blue-50 via-white to-purple-50 -mx-4 -my-8 px-4 py-12">
+        <div className="container mx-auto">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4" data-testid="text-page-title">
             Meet Your Health Insurance Experts
@@ -357,8 +363,9 @@ function PersonasPage() {
           isOpen={isDialogOpen}
           onClose={() => setIsDialogOpen(false)}
         />
+        </div>
       </div>
-    </div>
+    </Layout>
   );
 }
 

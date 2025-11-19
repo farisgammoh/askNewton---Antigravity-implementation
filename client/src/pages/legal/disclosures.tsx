@@ -1,11 +1,17 @@
 import { Link } from "wouter";
+import Layout from "@/components/marketing/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft, AlertTriangle } from "lucide-react";
 
 export default function Disclosures() {
   return (
-    <div className="max-w-4xl mx-auto">
+    <Layout
+      title="Disclosures - AskNewton"
+      description="Important disclosures about AskNewton health insurance guidance services for California newcomers."
+      canonical="https://asknewton.com/legal/disclosures"
+    >
+      <div className="max-w-4xl mx-auto">
       <Link href="/">
         <Button variant="ghost" className="mb-6" data-testid="button-back-home">
           <ChevronLeft className="w-4 h-4 mr-2" />
@@ -86,6 +92,7 @@ export default function Disclosures() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Layout>
   );
 }
