@@ -1,0 +1,9 @@
+# robots.txt for AskNewton
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /recommendation/
+
+# Sitemap
+Sitemap: https://asknewton.com/sitemap.xml

@@ -1,0 +1,60 @@
+You are refactoring and hardening a small marketing site (“AskNewton — Health insurance for newcomers to California”).
+Primary pages and content examples are here:
+- Landing: https://duplicate-ask-newton-v-2-farisgammoh.replit.app/
+- Traveler: https://duplicate-ask-newton-v-2-farisgammoh.replit.app/traveler
+- Student: https://duplicate-ask-newton-v-2-farisgammoh.replit.app/student
+- Nomad: https://duplicate-ask-newton-v-2-farisgammoh.replit.app/nomad (this may 404 or error; create a placeholder page using the same layout)
+
+Goals
+1) Code hygiene and structure
+   - Convert ad-hoc HTML into a consistent component-driven structure.
+   - Create reusable components: Header, Footer, Hero, Section, FAQ, CTA buttons, Card, Badge, FeatureList.
+   - Extract shared colors, spacing, and typography tokens into a single theme file (CSS variables or Tailwind config).
+   - Normalize file naming: kebab-case for files, PascalCase for components.
+
+2) Styling
+   - Use a single styling system (Tailwind or CSS Modules). Remove duplicate/global ad-hoc CSS.
+   - Ensure mobile-first responsive rules. Verify headings and spacing scales on 320px, 768px, 1024px widths.
+   - Add focus-visible styles for all interactive elements.
+
+3) Accessibility
+   - Semantic HTML for sections and headings (one h1 per page).
+   - Button vs link correctness, aria-labels for icons, alt text for images.
+   - Keyboard nav and skip-to-content link.
+   - Color-contrast AA minimum.
+
+4) Performance and UX
+   - Optimize images and use width/height attributes to prevent CLS.
+   - Defer non-critical scripts, preload critical fonts, and use font-display: swap.
+   - Remove unused dependencies and dead code.
+   - Lighthouse targets: Performance 90+, Accessibility 95+, SEO 95+.
+
+5) Content consistency
+   - Centralize CTA variants (“Get my options”, “Get Started”, “Start assessment”) into a single component with props.
+   - Ensure internal links use consistent paths and that external links open with rel=\"noopener\".
+   - Create a shared FAQ component and drive Q&A from a simple JSON array.
+
+6) SEO basics
+   - Add <title>, <meta name=\"description\">, canonical, and Open Graph tags per page.
+   - Logical h1/h2 structure, meaningful link text, and unique descriptions.
+   - Generate a sitemap.xml and robots.txt.
+
+7) Build & quality gates
+   - Add Prettier + ESLint with a reasonable config (airbnb or standard). Add format and lint scripts.
+   - TypeScript optional: if present, strengthen types for props and utilities.
+   - Add a minimal CI step (if supported) to run lint and build.
+
+Concrete tasks
+- Create /components with: Header.tsx, Footer.tsx, Hero.tsx, Section.tsx, CTA.tsx, Card.tsx, FeatureList.tsx, FAQ.tsx.
+- Create /pages for: / (Landing), /traveler, /student, /nomad. Each page uses Hero + Section + FeatureList + CTA + FAQ.
+- Extract palette and spacing scale into /styles/theme.css (or tailwind.config.js). Replace hard-coded colors with variables.
+- Replace multiple CTA anchor tags with <CTA variant=\"primary|secondary\" href=\"...\">.
+- Build a JSON source for FAQs and feature bullets so copy is not duplicated between pages.
+- Add accessible WhatsApp and Calendly links with aria-labels and proper rel attributes.
+- Add a shared Layout component to wrap pages with Header/Footer and <main id=\"main\">.
+
+Acceptance criteria
+- All pages render with consistent layout and typography across mobile, tablet, desktop.
+- No console errors, no broken internal links, and Lighthouse meets targets.
+- ESLint and Prettier run clean: `npm run lint` and `npm run format`.
+- A README section explains how to add a new persona page in under 5 minutes by composing existing components.
