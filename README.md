@@ -1,276 +1,183 @@
-# AskNewton - Health Insurance for California Newcomers
+Here is your **production-ready, polished, GitHub-optimized README.md** exactly as requested — clean, concise, professional, and suitable for investors, contributors, and engineers.
 
-Simple health insurance guidance for California newcomers. Get clear, fast coverage options for Nomads, Travelers, and Students.
+I am *not* creating a file yet — I’m giving you the full README content so you can review it.
+If you'd like, I can also **generate the file automatically** and prepare the commit script.
 
-## Getting Started
+---
 
-### Prerequisites
-- Node.js 20+
-- npm or yarn
+# **📘 README.md — AskNewton**
 
-### Installation
+```markdown
+# AskNewton — AI-Native Health Insurance for Immigrants, Expats & Nomads  
+*Fast, personalized health-insurance guidance for newcomers to the United States.*
 
-```bash
-npm install
+AskNewton helps Travelers, Students, Digital Nomads, and new Residents understand U.S. health insurance in minutes.  
+This repository contains the full Replit-native AskNewton codebase: frontend, backend APIs, and the multi-agent “Society of Mind” engine.
+
+---
+
+## 🚀 Features
+
+- **AI-powered plan recommendations** (GPT-5 architecture)  
+- **Persona-specific workflows** for Nomads, Travelers, and Students  
+- **WhatsApp advisor integration**  
+- **Cost-tracking + OpenAI token usage logging**  
+- **Idempotent request engine**  
+- **Persona cache for cost optimization**  
+- **Production-ready API with webhooks, storage, and monitoring**
+
+---
+
+## 🧱 Tech Stack
+
+### Frontend
+- React + TypeScript  
+- Wouter router  
+- Vite  
+- shadcn/ui  
+
+### Backend
+- Node.js / Express  
+- drizzle-orm  
+- Neon Serverless Postgres  
+- OpenAI API  
+- ElevenLabs Webhooks  
+- Replit-native runtime  
+
+### AI Layer
+- AskNewton “Society of Mind”  
+- Persona matrix  
+- Multi-agent orchestration (Evaluator, Recommender, Verifier)
+
+---
+
+## 📁 Repository Structure
+
 ```
 
-### Development
+apps-script/          # Utility scripts & automations
+attached_assets/      # Assets for docs & marketing
+client/               # Frontend (React)
+src/
+components/       # Marketing + UI components
+data/             # Personas, FAQs
+pages/            # Landing + persona pages
+styles/           # Global CSS
+data/                 # Seeds, migrations
+docs/                 # Architecture, runbooks, integration guides
+lib/                  # Helpers, utils, logging
+public/               # Static assets
+server/               # Backend APIs, webhooks, storage
+shared/               # Types, validation schemas
+society/              # AI agent orchestration system
+tests/                # Automated test suite
+
+````
+
+---
+
+## ⚙️ Getting Started
+
+### 1. Install dependencies
+```bash
+npm install
+````
+
+### 2. Start development
 
 ```bash
 npm run dev
 ```
 
-This starts the development server at `http://localhost:5000`.
+Frontend → [http://localhost:5000](http://localhost:5000)
+Backend → auto-managed (Replit runtime)
 
-### Build
+### 3. Production build
 
 ```bash
 npm run build
 npm start
 ```
 
-## Project Structure
+---
+
+## 🔐 Environment Variables
+
+Copy `.env.example` → `.env`:
 
 ```
-client/src/
-├── components/
-│   ├── marketing/      # Reusable marketing components
-│   │   ├── cta.tsx           # Call-to-action button component
-│   │   ├── feature-list.tsx  # Feature list component
-│   │   ├── hero.tsx          # Hero section component
-│   │   ├── layout.tsx        # Layout wrapper with SEO
-│   │   └── section.tsx       # Section wrapper component
-│   ├── ui/            # shadcn/ui components
-│   ├── FAQ.tsx        # FAQ component
-│   ├── Footer.tsx     # Site footer
-│   └── Header.tsx     # Site header
-├── data/
-│   ├── faqs.ts        # FAQ content for all personas
-│   └── personas.ts    # Persona data and features
-├── pages/
-│   ├── home.tsx       # Landing page
-│   ├── traveler.tsx   # Traveler persona page
-│   ├── student.tsx    # Student persona page
-│   ├── nomad.tsx      # Nomad persona page
-│   └── ...            # Other pages
-└── styles/
-    └── index.css      # Global styles and theme variables
+OPENAI_API_KEY=
+DATABASE_URL=
+VITE_WHATSAPP_NUMBER=
+HUBSPOT_PORTAL_ID=
+HUBSPOT_CLIENT_SECRET=
+ELEVEN_INIT_SECRET=
+ELEVEN_END_SECRET=
 ```
 
-## Adding a New Persona Page
+Secrets must be set in Replit, Vercel, Fly.io, or GitHub Actions — **never committed**.
 
-You can add a new persona page in under 5 minutes by composing existing components:
+---
 
-### Step 1: Add Persona Data
+## 🧠 Adding a New Persona (5-Minute Workflow)
 
-Edit `client/src/data/personas.ts` and add your new persona:
+1. Add persona → `client/src/data/personas.ts`
+2. Add FAQs → `client/src/data/faqs.ts`
+3. Create page → `client/src/pages/<persona>.tsx`
+4. Add route → `client/src/App.tsx`
+5. Update navigation
+6. Add SEO entry → `public/sitemap.xml`
 
-```typescript
-export const personas: Record<string, PersonaData> = {
-  // ... existing personas
-  yourPersona: {
-    id: "yourPersona",
-    name: "Your Persona",
-    tagline: "Your tagline here",
-    description: "Brief description",
-    icon: YourIcon,
-    heroTitle: "For Your Persona — your value proposition",
-    heroDescription: "Detailed description of what you offer",
-    whatsappMessage: "Hi AskNewton, I'm [your persona]",
-    metaDescription: "SEO meta description for this persona",
-    features: [
-      {
-        icon: Shield,
-        description: "Key feature 1"
-      },
-      // ... more features
-    ],
-    benefits: [
-      {
-        icon: Clock,
-        title: "Benefit title",
-        description: "Benefit description"
-      },
-      // ... more benefits
-    ]
-  }
-};
-```
+Built-in components make persona creation extremely fast.
 
-### Step 2: Add FAQ Content
+---
 
-Edit `client/src/data/faqs.ts`:
+## 📈 Monitoring & Observability
 
-```typescript
-export const yourPersonaFAQs: FAQ[] = [
-  {
-    question: "Common question 1?",
-    answer: "Answer to question 1"
-  },
-  // ... more FAQs
-];
+This repo includes:
 
-// Update the getFAQsForPersona function
-export function getFAQsForPersona(persona?: "traveler" | "student" | "nomad" | "yourPersona"): FAQ[] {
-  switch (persona) {
-    // ... existing cases
-    case "yourPersona":
-      return yourPersonaFAQs;
-    default:
-      return generalFAQs;
-  }
-}
-```
+* Token-level OpenAI usage logging
+* Cost monitoring (`openaiCallLog`)
+* Idempotent request handling (`requestLog`)
+* Webhook tracing (HubSpot, ElevenLabs)
+* Health endpoints
+* Persona cache hit tracking
 
-### Step 3: Create the Page Component
+---
 
-Create `client/src/pages/your-persona.tsx`:
-
-```typescript
-import { Link } from "wouter";
-import { ChevronLeft } from "lucide-react";
-import Layout from "@/components/marketing/layout";
-import Hero from "@/components/marketing/hero";
-import Section from "@/components/marketing/section";
-import FeatureList from "@/components/marketing/feature-list";
-import CTA from "@/components/marketing/cta";
-import FAQ from "@/components/FAQ";
-import { Button } from "@/components/ui/button";
-import { getPersonaData } from "@/data/personas";
-
-export default function YourPersona() {
-  const whatsappNumber = import.meta.env.VITE_WHATSAPP_NUMBER || "14157697858";
-  const persona = getPersonaData("yourPersona")!;
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(persona.whatsappMessage)}`;
-
-  return (
-    <Layout
-      title="Your Persona - Health Insurance in California"
-      description={persona.metaDescription}
-      canonical="https://asknewton.com/your-persona"
-    >
-      <div className="max-w-4xl mx-auto space-y-10">
-        <Link href="/">
-          <Button variant="ghost" className="mb-6" data-testid="button-back-home">
-            <ChevronLeft className="w-4 h-4 mr-2" aria-hidden="true" />
-            Back to home
-          </Button>
-        </Link>
-
-        <Hero
-          title={persona.heroTitle}
-          description={<>Your <strong>compelling</strong> description here</>}
-        >
-          <CTA
-            variant="primary"
-            href="/start?persona=yourPersona"
-            size="lg"
-            testId="button-start-wizard"
-          >
-            Start assessment
-          </CTA>
-          <CTA
-            variant="whatsapp"
-            href={whatsappUrl}
-            external
-            size="lg"
-            testId="button-hero-whatsapp"
-            ariaLabel="Chat with us on WhatsApp"
-          >
-            Chat on WhatsApp
-          </CTA>
-        </Hero>
-
-        <Section>
-          <FeatureList features={persona.features} />
-        </Section>
-
-        {/* Add your custom sections here */}
-        
-        <FAQ persona="yourPersona" />
-      </div>
-    </Layout>
-  );
-}
-```
-
-### Step 4: Add the Route
-
-Edit `client/src/App.tsx` and add your route:
-
-```typescript
-import YourPersona from "@/pages/your-persona";
-
-// In the Router component
-<Route path="/your-persona" component={YourPersona} />
-```
-
-### Step 5: Update Navigation (Optional)
-
-Add a link to your new persona in:
-- `client/src/components/Header.tsx` (navigation)
-- `client/src/components/Footer.tsx` (footer links)
-- `client/src/pages/home.tsx` (persona cards section)
-
-### Step 6: Update SEO Files
-
-Add your new page to `public/sitemap.xml`:
-
-```xml
-<url>
-  <loc>https://asknewton.com/your-persona</loc>
-  <lastmod>2024-01-01</lastmod>
-  <changefreq>weekly</changefreq>
-  <priority>0.9</priority>
-</url>
-```
-
-That's it! Your new persona page is ready with:
-- ✅ Proper SEO meta tags
-- ✅ Accessible HTML structure
-- ✅ Responsive design
-- ✅ Consistent styling
-- ✅ Reusable components
-
-## Code Quality
-
-### Linting and Formatting
+## 🧪 Testing
 
 ```bash
-# Check for lint errors
-npm run lint
-
-# Format code with Prettier
-npm run format
+npm run test
 ```
 
-### Key Accessibility Features
+---
 
-- Semantic HTML with proper heading hierarchy
-- Skip-to-content link for keyboard navigation
-- ARIA labels for icons and interactive elements
-- Focus-visible styles for keyboard navigation
-- Proper color contrast (WCAG AA minimum)
-- Alt text for all images
-- Role attributes where appropriate
+## 🚀 Deployment
 
-### Performance Optimizations
+Supported platforms:
 
-- Font loading with `display=swap`
-- Optimized images with width/height attributes
-- Lazy loading for images
-- Code splitting via route-based chunks
-- CSS variables for theming
+| Layer        | Platform                 |
+| ------------ | ------------------------ |
+| Frontend     | Vercel / Replit Deploy   |
+| Backend API  | Fly.io / Replit Deploy   |
+| Database     | Neon Serverless Postgres |
+| Edge caching | Cloudflare (optional)    |
 
-### SEO Best Practices
+---
 
-- Unique title and meta description per page
-- Canonical URLs
-- Open Graph and Twitter Card meta tags
-- Semantic HTML structure
-- Sitemap.xml and robots.txt
-- Meaningful link text
+## 🤝 Contributing
 
-## License
+1. Fork
+2. Branch
+3. Commit
+4. PR
 
-MIT
+Please include screenshots or logs when relevant.
+
+---
+
+## 📄 License
+
+MIT License.
+Attribution appreciated but not required.
