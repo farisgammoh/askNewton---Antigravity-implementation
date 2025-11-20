@@ -13,7 +13,7 @@ export interface SecurityConfig {
 
 export function setupSecurityMiddleware(app: Express, config: SecurityConfig = {}) {
   const {
-    allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5000', 'http://127.0.0.1:5000', 'https://*.replit.app', 'https://*.repl.co'],
+    allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5000', 'http://127.0.0.1:5000', 'https://*.replit.app', 'https://*.repl.co', 'https://*.replit.dev'],
     maxBodySize = '10mb',
     enableRateLimit = true
   } = config;
