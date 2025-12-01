@@ -5,11 +5,15 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Install dependencies first (for layer caching)
+# Install dependencies (including devDependencies for build)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy application code
 COPY . .
+
+# Build the application
+RUN npm run build
 
 # Create directories for assets and databases
 RUN mkdir -p public lib attached_assets && \
@@ -17,6 +21,10 @@ RUN mkdir -p public lib attached_assets && \
 
 # Switch to non-root user
 USER node
+
+# Set environment variables
+ENV PORT=3000
+ENV NODE_ENV=production
 
 # Expose port
 EXPOSE 3000
@@ -31,4 +39,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   " || exit 1
 
 # Start command
-CMD ["node", "server.js"]
+CMD ["npm", "run", "start"]
