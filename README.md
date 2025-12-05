@@ -155,14 +155,48 @@ npm run test
 
 ## 🚀 Deployment
 
-Supported platforms:
+### Google Cloud Platform (Cloud Run) - Recommended
+
+AskNewton is configured for deployment to **Google Cloud Run** using the included `cloudbuild.yaml`.
+
+#### Prerequisites
+1. Create a GCP project (e.g., `asknewton-prod`)
+2. Enable APIs:
+   ```bash
+   gcloud services enable run.googleapis.com cloudbuild.googleapis.com containerregistry.googleapis.com
+   ```
+
+#### Deploy via Cloud Build
+```bash
+gcloud builds submit --config cloudbuild.yaml
+```
+
+This will:
+- Build the Docker image
+- Push to Google Container Registry
+- Deploy to Cloud Run at `https://asknewton-<hash>.run.app`
+
+#### Set Environment Variables
+```bash
+gcloud run services update asknewton \
+  --region us-central1 \
+  --set-env-vars="DATABASE_URL=<your-db-url>,OPENAI_API_KEY=<your-key>"
+```
+
+#### Connect Custom Domain
+```bash
+gcloud run domain-mappings create --service asknewton --domain asknewton.com --region us-central1
+```
+
+### Other Supported Platforms
 
 | Layer        | Platform                 |
 | ------------ | ------------------------ |
 | Frontend     | Vercel / Replit Deploy   |
-| Backend API  | Fly.io / Replit Deploy   |
+| Backend API  | Cloud Run / Fly.io       |
 | Database     | Neon Serverless Postgres |
 | Edge caching | Cloudflare (optional)    |
+
 
 ---
 
