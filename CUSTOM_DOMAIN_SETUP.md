@@ -1,4 +1,4 @@
-# 🌐 Custom Domain Setup for AskNewton.com
+# 🌐 Custom Domain Setup for asknewton.com
 
 **Goal**: Point `asknewton.com` to your Replit deployment and serve the legacy site at `/classic`
 
@@ -50,7 +50,7 @@
 
 ### Step 3: Configure DNS in GoDaddy
 
-1. **Log in to GoDaddy**: https://dcc.godaddy.com/domains
+1. **Log in to GoDaddy**: <https://dcc.godaddy.com/domains>
 2. **Find asknewton.com** in your domain list
 3. **Click "DNS"** or "Manage DNS"
 4. **Add/Update DNS Records**:
@@ -73,8 +73,8 @@
 | A | @ | `[IP from Replit]` | 1 Hour |
 | CNAME | www | `california-next-farisgammoh.replit.app` | 1 Hour |
 
-5. **Save changes**
-6. **Delete old records** pointing to previous hosting (if any)
+1. **Save changes**
+2. **Delete old records** pointing to previous hosting (if any)
 
 ---
 
@@ -82,9 +82,10 @@
 
 - **Typical wait time**: 5-30 minutes
 - **Maximum**: Up to 48 hours (rare)
-- **Check status**: https://dnschecker.org/#A/asknewton.com
+- **Check status**: <https://dnschecker.org/#A/asknewton.com>
 
 **While you wait**, you can test using your Replit URL:
+
 ```
 https://california-next-farisgammoh.replit.app
 https://california-next-farisgammoh.replit.app/classic
@@ -98,11 +99,12 @@ Once DNS propagates, test these URLs:
 
 | URL | Expected Result |
 |-----|-----------------|
-| `https://asknewton.com` | ✅ New AskNewton platform (React wizard) |
-| `https://asknewton.com/classic` | ✅ Legacy AskNewton site |
+| `https://asknewton.com` | ✅ New askNewton platform (React wizard) |
+| `https://asknewton.com/classic` | ✅ Legacy askNewton site |
 | `https://www.asknewton.com` | ✅ Redirects to asknewton.com |
 
 **Test commands**:
+
 ```bash
 # Check DNS resolution
 nslookup asknewton.com
@@ -132,7 +134,7 @@ open https://asknewton.com/classic
 
 ## 🔧 Migrating Your Existing Legacy Content
 
-Your existing AskNewton site is on a different Replit project. Here's how to migrate it:
+Your existing askNewton site is on a different Replit project. Here's how to migrate it:
 
 ### Option 1: Manual Copy (Recommended for Small Sites)
 
@@ -142,6 +144,7 @@ Your existing AskNewton site is on a different Replit project. Here's how to mig
    - Note the file structure
 
 2. **Upload to this project**:
+
    ```bash
    # In this Replit project's shell:
    cd public/classic
@@ -167,6 +170,7 @@ rm -rf temp
 ### Option 3: Keep It Simple
 
 The current `public/classic/index.html` is a fully functional placeholder that:
+
 - ✅ Matches AskNewton branding
 - ✅ Links to new platform
 - ✅ Shows key features and personas
@@ -219,6 +223,7 @@ No additional configuration needed.
 ### Preserve SEO from Old Site
 
 1. **Add redirects** if URLs have changed:
+
    ```typescript
    // In server/routes.ts
    app.get('/old-page', (req, res) => {
@@ -237,6 +242,7 @@ No additional configuration needed.
 ### Google Search Console
 
 After DNS setup:
+
 1. Add `asknewton.com` as property
 2. Verify ownership (Replit provides verification file)
 3. Submit new sitemap
@@ -251,9 +257,11 @@ After DNS setup:
 **Problem**: `asknewton.com` doesn't load after 30 minutes
 
 **Solutions**:
+
 1. Check DNS records in GoDaddy match Replit values exactly
 2. Try `www.asknewton.com` instead
 3. Clear browser cache and DNS cache:
+
    ```bash
    # macOS
    sudo dscacheutil -flushcache
@@ -261,6 +269,7 @@ After DNS setup:
    # Windows
    ipconfig /flushdns
    ```
+
 4. Use incognito/private browsing to bypass cache
 
 ---
@@ -270,6 +279,7 @@ After DNS setup:
 **Problem**: Main site works, but `/classic` returns 404
 
 **Solutions**:
+
 1. Verify file exists: `ls public/classic/index.html`
 2. Check file permissions: `chmod 644 public/classic/index.html`
 3. Restart Replit deployment
@@ -282,6 +292,7 @@ After DNS setup:
 **Problem**: HTTPS site loading HTTP resources
 
 **Solution**: Update all resource URLs in `/classic` to use HTTPS or relative paths:
+
 ```html
 <!-- Bad -->
 <script src="http://example.com/script.js"></script>
@@ -299,6 +310,7 @@ After DNS setup:
 **Problem**: Cached version of old site appears
 
 **Solutions**:
+
 1. Wait for DNS propagation (up to 48 hours)
 2. Check DNS with: `nslookup asknewton.com`
 3. Clear browser cache completely
@@ -362,11 +374,11 @@ Your domain is configured correctly when:
 
 ## 🔗 Useful Links
 
-- **GoDaddy DNS Management**: https://dcc.godaddy.com/domains
-- **DNS Checker**: https://dnschecker.org
-- **SSL Checker**: https://www.sslshopper.com/ssl-checker.html
-- **Replit Docs**: https://docs.replit.com/hosting/deployments/custom-domains
-- **Google Search Console**: https://search.google.com/search-console
+- **GoDaddy DNS Management**: <https://dcc.godaddy.com/domains>
+- **DNS Checker**: <https://dnschecker.org>
+- **SSL Checker**: <https://www.sslshopper.com/ssl-checker.html>
+- **Replit Docs**: <https://docs.replit.com/hosting/deployments/custom-domains>
+- **Google Search Console**: <https://search.google.com/search-console>
 
 ---
 
@@ -375,6 +387,7 @@ Your domain is configured correctly when:
 ### Common GoDaddy DNS Record Format
 
 **Root Domain (asknewton.com)**:
+
 ```
 Type: A
 Host: @
@@ -383,6 +396,7 @@ TTL: 1 Hour
 ```
 
 **WWW Subdomain**:
+
 ```
 Type: CNAME
 Host: www

@@ -1,8 +1,8 @@
-# AskNewton AI Agents
+# askNewton AI Agents
 
 ### *Multi-Agent Architecture — “Society of Mind” Implementation*
 
-AskNewton uses a modular, multi-agent architecture inspired by Minsky’s **Society of Mind** model.
+askNewton uses a modular, multi-agent architecture inspired by Minsky’s **Society of Mind** model.
 Each agent is specialized, autonomous, and communicates through structured messages, shared memory, and controlled function-calling.
 
 ---
@@ -117,7 +117,7 @@ Internal logs feed into OpenAI usage monitoring dashboards.
 
 ## 🔊 Voice Agents (ElevenLabs + Webhooks)
 
-AskNewton integrates deeply with ElevenLabs conversational APIs.
+askNewton integrates deeply with ElevenLabs conversational APIs.
 
 ### **7. Voice Init Agent**
 
@@ -206,4 +206,3 @@ Triggered by `/webhooks/eleven/conversation-end`.
   * Real-time plan pricing updates
 
 ---
-

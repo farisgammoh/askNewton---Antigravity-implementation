@@ -1,4 +1,4 @@
-# ✅ Classic Site Setup Complete!
+# ✅ Classic Site Setup Complete
 
 The `/classic` legacy site is now fully integrated and working.
 
@@ -9,6 +9,7 @@ The `/classic` legacy site is now fully integrated and working.
 ### 1. ✅ Static File Serving Configured
 
 **File**: `server/routes.ts`
+
 - Added `express.static()` middleware to serve `public/` directory
 - Works in both **development** and **production** modes
 - Static files take precedence before React app routing
@@ -16,14 +17,16 @@ The `/classic` legacy site is now fully integrated and working.
 ### 2. ✅ Legacy Site Created
 
 **Folder**: `public/classic/`
+
 - **`index.html`**: Fully functional placeholder homepage with:
-  - AskNewton branding and styling
+  - askNewton branding and styling
   - Navigation banner linking to new platform
   - Features and personas sections
   - Mobile-responsive design
   - SEO meta tags
 
 **To replace with your actual content**:
+
 ```bash
 # Copy files from your old Replit project to public/classic/
 # Then update any absolute paths to relative paths
@@ -34,6 +37,7 @@ See `public/classic/README.md` for migration instructions.
 ### 3. ✅ Navigation Added
 
 **File**: `client/src/components/Footer.tsx`
+
 - Added "Classic Site" link in the Legal section
 - Visible on all pages of the main app
 - Uses native `<a>` tag (not wouter) for proper static file navigation
@@ -41,6 +45,7 @@ See `public/classic/README.md` for migration instructions.
 ### 4. ✅ DNS Configuration Guide
 
 **File**: `CUSTOM_DOMAIN_SETUP.md`
+
 - Complete step-by-step GoDaddy DNS instructions
 - Replit custom domain setup process
 - Troubleshooting guide
@@ -84,6 +89,7 @@ curl http://localhost:5000/classic/index.html
 ## 📦 Files Created/Modified
 
 ### New Files Created
+
 - ✅ `public/classic/index.html` - Legacy site homepage
 - ✅ `public/classic/README.md` - Migration instructions
 - ✅ `CUSTOM_DOMAIN_SETUP.md` - DNS configuration guide
@@ -91,6 +97,7 @@ curl http://localhost:5000/classic/index.html
 - ✅ `CLASSIC_SITE_SETUP_COMPLETE.md` - This file
 
 ### Files Modified
+
 - ✅ `server/routes.ts` - Added static file middleware
 - ✅ `client/src/components/Footer.tsx` - Added "Classic Site" link
 - ✅ `server/index.ts` - Cleaned up duplicate middleware
@@ -111,6 +118,7 @@ curl http://localhost:5000/classic/index.html
    - Any other static content
 
 3. **Upload to this project**:
+
    ```bash
    # In this Replit project's shell
    cd public/classic
@@ -125,6 +133,7 @@ curl http://localhost:5000/classic/index.html
    - Fix internal links to include `/classic` prefix
 
 5. **Test locally**:
+
    ```
    https://california-next-farisgammoh.replit.app/classic
    ```
@@ -134,6 +143,7 @@ curl http://localhost:5000/classic/index.html
 ### Option 2: Use the Placeholder (Fastest)
 
 The current `public/classic/index.html` is fully functional and includes:
+
 - ✅ AskNewton branding
 - ✅ Banner linking to new platform  
 - ✅ Features and personas
@@ -193,18 +203,21 @@ Before deploying to production:
 ## 🔧 Technical Details
 
 ### Development Mode
+
 - Vite serves React app
 - `express.static()` serves `public/` files first
 - `/classic/*` bypasses Vite and serves static HTML
 - Hot reload works for both React and static files
 
 ### Production Mode
+
 - Built React app in `dist/client/`
 - `public/` copied to `dist/client/` during build
 - Single deployment serves both new and legacy sites
 - Static files cached at CDN edge (Replit provides this)
 
 ### Static File Priority
+
 ```
 1. express.static(public/) ← /classic files served here
 2. API routes (/api/*)
@@ -248,6 +261,7 @@ https://asknewton.com/classic
 ### Customize Placeholder
 
 Edit `public/classic/index.html`:
+
 - Update colors in `<style>` section
 - Modify hero section text
 - Add/remove features
@@ -266,6 +280,7 @@ public/classic/images/logo.png
 ```
 
 All will be automatically served at:
+
 ```
 /classic/about.html
 /classic/contact.html
@@ -279,7 +294,8 @@ etc.
 
 ### Issue: /classic shows 404
 
-**Solution**: 
+**Solution**:
+
 - Check file exists: `ls public/classic/index.html`
 - Restart workflow: Click "Restart" in Replit
 - Clear browser cache
@@ -289,6 +305,7 @@ etc.
 ### Issue: /classic shows React app instead of static HTML
 
 **Solution**:
+
 - Verify `express.static()` is in `server/routes.ts`
 - Check file path is correct
 - Restart Replit deployment
@@ -298,6 +315,7 @@ etc.
 ### Issue: Images/CSS not loading on /classic
 
 **Solution**:
+
 - Use relative paths: `./images/logo.png` not `/images/logo.png`
 - Or use absolute paths with /classic prefix: `/classic/images/logo.png`
 - Check file exists in `public/classic/`
@@ -307,6 +325,7 @@ etc.
 ### Issue: Footer link not visible
 
 **Solution**:
+
 - Check `client/src/components/Footer.tsx` has the link
 - Clear browser cache
 - Restart Vite dev server
@@ -316,18 +335,21 @@ etc.
 ## 📊 SEO Impact
 
 ### New Platform (`/`)
+
 - Primary homepage for search engines
 - Modern, fast React app
 - Better user experience
 - AI-powered recommendations
 
 ### Legacy Site (`/classic`)
+
 - Preserves existing URLs
 - Maintains SEO history
 - 301 redirects can be added if needed
 - Search engines will index both
 
 ### Best Practice
+
 - Add `<link rel="canonical">` tags
 - Update sitemap.xml to include both
 - Add redirects for changed URLs
@@ -338,6 +360,7 @@ etc.
 ## 🎯 Summary
 
 You now have:
+
 - ✅ New React platform at `/`
 - ✅ Legacy site at `/classic`
 - ✅ Single Replit deployment
@@ -346,7 +369,8 @@ You now have:
 - ✅ Production-ready setup
 
 **What to do now**:
-1. **Test it**: Open https://california-next-farisgammoh.replit.app/classic
+
+1. **Test it**: Open <https://california-next-farisgammoh.replit.app/classic>
 2. **Migrate content**: Copy files from old project (optional)
 3. **Configure domain**: Follow `CUSTOM_DOMAIN_SETUP.md`
 4. **Go live**: Deploy to production! 🚀
@@ -356,6 +380,7 @@ You now have:
 **Status**: ✅ **READY FOR DEPLOYMENT**
 
 Questions? Check:
+
 - `CUSTOM_DOMAIN_SETUP.md` - Domain configuration
 - `public/classic/README.md` - Content migration
 - `DEPLOYMENT_PACKAGE_SUMMARY.md` - Society of Mind deployment

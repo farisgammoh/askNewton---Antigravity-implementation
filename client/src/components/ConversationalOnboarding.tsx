@@ -58,7 +58,7 @@ export default function ConversationalOnboarding() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isComplete, setIsComplete] = useState(false);
-  
+
   const form = useForm<SimpleOnboardingData>({
     resolver: zodResolver(simpleOnboardingSchema),
     defaultValues: {
@@ -99,11 +99,11 @@ export default function ConversationalOnboarding() {
   const handleNext = async () => {
     const field = currentStepData.field;
     const isValid = await form.trigger(field);
-    
+
     if (!isValid) {
       return; // Don't proceed if current step is invalid
     }
-    
+
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
@@ -139,16 +139,16 @@ export default function ConversationalOnboarding() {
               Thanks! We've got your info and will follow up with the best health insurance options for you.
             </p>
             <div className="space-y-2">
-              <Button 
-                onClick={() => setLocation('/personas')} 
+              <Button
+                onClick={() => setLocation('/personas')}
                 className="w-full"
                 data-testid="button-select-expert"
               >
                 Continue to Select Your AI Expert
               </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => setLocation('/')} 
+              <Button
+                variant="outline"
+                onClick={() => setLocation('/')}
                 className="w-full"
                 data-testid="button-home"
               >
@@ -173,13 +173,13 @@ export default function ConversationalOnboarding() {
             </p>
           </div>
           <CardTitle className="text-xl font-bold text-gray-800">
-            👋 Welcome to AskNewton!
+            👋 Welcome to askNewton!
           </CardTitle>
           <p className="text-gray-600">
             Let's find the best health insurance options for you. I'll just ask a few quick questions.
           </p>
         </CardHeader>
-        
+
         <CardContent>
           <Form {...form}>
             <form className="space-y-6">
@@ -187,7 +187,7 @@ export default function ConversationalOnboarding() {
                 <h3 className="text-lg font-semibold mb-4 text-gray-800">
                   {currentStepData.question}
                 </h3>
-                
+
                 {currentStepData.field === 'language' && (
                   <FormField
                     control={form.control}
@@ -195,8 +195,8 @@ export default function ConversationalOnboarding() {
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <Select 
-                            onValueChange={field.onChange} 
+                          <Select
+                            onValueChange={field.onChange}
                             value={field.value}
                             data-testid="select-language"
                           >
@@ -208,10 +208,10 @@ export default function ConversationalOnboarding() {
                                 🇺🇸 English
                               </SelectItem>
                               <SelectItem value="Arabic" data-testid="option-arabic">
-                                🇸🇦 Arabic
+                                🇸🇦 العربية
                               </SelectItem>
                               <SelectItem value="Spanish" data-testid="option-spanish">
-                                🇪🇸 Spanish
+                                🇪🇸 Español
                               </SelectItem>
                             </SelectContent>
                           </Select>
@@ -229,7 +229,7 @@ export default function ConversationalOnboarding() {
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <Input 
+                          <Input
                             {...field}
                             type="email"
                             placeholder="your.email@example.com"
@@ -250,7 +250,7 @@ export default function ConversationalOnboarding() {
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <Textarea 
+                          <Textarea
                             {...field}
                             placeholder="Please share any relevant information..."
                             className="text-base min-h-[100px]"
@@ -265,9 +265,9 @@ export default function ConversationalOnboarding() {
               </div>
 
               <div className="flex justify-between pt-6">
-                <Button 
+                <Button
                   type="button"
-                  variant="outline" 
+                  variant="outline"
                   onClick={handlePrevious}
                   disabled={currentStep === 0}
                   className="flex items-center"
@@ -276,8 +276,8 @@ export default function ConversationalOnboarding() {
                   <ChevronLeft className="w-4 h-4 mr-1" />
                   Previous
                 </Button>
-                
-                <Button 
+
+                <Button
                   type="button"
                   onClick={handleNext}
                   disabled={!isCurrentStepValid() || submitMutation.isPending}

@@ -5,14 +5,14 @@ If you'd like, I can also **generate the file automatically** and prepare the co
 
 ---
 
-# **📘 README.md — AskNewton**
+# **📘 README.md — askNewton**
 
 ```markdown
-# AskNewton — AI-Native Health Insurance for Immigrants, Expats & Nomads  
+# askNewton — AI-Native Health Insurance for Immigrants, Expats & Nomads  
 *Fast, personalized health-insurance guidance for newcomers to the United States.*
 
-AskNewton helps Travelers, Students, Digital Nomads, and new Residents understand U.S. health insurance in minutes.  
-This repository contains the full Replit-native AskNewton codebase: frontend, backend APIs, and the multi-agent “Society of Mind” engine.
+askNewton helps Travelers, Students, Digital Nomads, and new Residents understand U.S. health insurance in minutes.  
+This repository contains the full Replit-native askNewton codebase: frontend, backend APIs, and the multi-agent “Society of Mind” engine.
 
 ---
 
@@ -160,23 +160,27 @@ npm run test
 AskNewton is configured for deployment to **Google Cloud Run** using the included `cloudbuild.yaml`.
 
 #### Prerequisites
+
 1. Create a GCP project (e.g., `asknewton-prod`)
 2. Enable APIs:
+
    ```bash
    gcloud services enable run.googleapis.com cloudbuild.googleapis.com containerregistry.googleapis.com
    ```
 
 #### Deploy via Cloud Build
+
 ```bash
 gcloud builds submit --config cloudbuild.yaml
 ```
 
 This will:
-- Build the Docker image
-- Push to Google Container Registry
-- Deploy to Cloud Run at `https://asknewton-<hash>.run.app`
+* Build the Docker image
+* Push to Google Container Registry
+* Deploy to Cloud Run at `https://asknewton-<hash>.run.app`
 
 #### Set Environment Variables
+
 ```bash
 gcloud run services update asknewton \
   --region us-central1 \
@@ -184,6 +188,7 @@ gcloud run services update asknewton \
 ```
 
 #### Connect Custom Domain
+
 ```bash
 gcloud run domain-mappings create --service asknewton --domain asknewton.com --region us-central1
 ```
@@ -196,7 +201,6 @@ gcloud run domain-mappings create --service asknewton --domain asknewton.com --r
 | Backend API  | Cloud Run / Fly.io       |
 | Database     | Neon Serverless Postgres |
 | Edge caching | Cloudflare (optional)    |
-
 
 ---
 

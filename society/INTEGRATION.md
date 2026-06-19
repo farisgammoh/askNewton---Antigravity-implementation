@@ -1,12 +1,12 @@
-# Integration Guide: AskNewton Society of Mind
+# Integration Guide: askNewton Society of Mind
 
-This guide shows how to integrate the Society of Mind AI agents with your existing AskNewton California application.
+This guide shows how to integrate the Society of Mind AI agents with your existing askNewton California application.
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     AskNewton Main App                       │
+│                     askNewton Main App                       │
 │                     (Port 5000)                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │ React Wizard │  │  WhatsApp    │  │  API Routes  │      │
@@ -286,11 +286,13 @@ async function processNewLead(leadId: string) {
 ## Environment Setup
 
 ### Main App (.env)
+
 ```env
 SOCIETY_URL=http://localhost:4000
 ```
 
 ### Society Service (society/.env)
+
 ```env
 PORT=4000
 OPENAI_API_KEY=your_key_here
@@ -305,11 +307,13 @@ REDIS_URL=redis://localhost:6379  # Optional for now
 ### 1. Start both services
 
 **Terminal 1 - Main AskNewton App:**
+
 ```bash
 npm run dev  # Runs on port 5000
 ```
 
 **Terminal 2 - Society Service:**
+
 ```bash
 cd society
 npm run dev  # Runs on port 4000
@@ -371,16 +375,21 @@ curl -X POST http://localhost:4000/gateway \
 ## Troubleshooting
 
 ### Issue: Connection refused to port 4000
+
 **Solution:** Ensure Society service is running: `cd society && npm run dev`
 
 ### Issue: OpenAI API errors
+
 **Solution:** Check `OPENAI_API_KEY` is set in `society/.env`
 
 ### Issue: Plans not matching
+
 **Solution:** Update `society/src/tools/planCatalog.ts` with real plan data
 
 ### Issue: Slow response times
-**Solution:** 
+
+**Solution:**
+
 - Check OpenAI API latency
 - Add caching for plan catalog
 - Consider using `gpt-4o-mini` instead of `gpt-4o`
@@ -398,6 +407,7 @@ curl -X POST http://localhost:4000/gateway \
 ## Support
 
 For questions about integration:
+
 - Review example requests in `society/example-requests/`
 - Check Society service logs for errors
 - Test endpoints individually before integration

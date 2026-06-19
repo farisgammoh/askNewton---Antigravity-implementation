@@ -1,6 +1,6 @@
 # Overview
 
-AskNewton California is a health insurance guidance platform specifically designed for newcomers to California. The application serves three primary personas: Nomads (remote workers/contractors), Travelers (1-6 month visitors), and Students (F-1/J-1 visa holders). The platform provides personalized insurance recommendations through an intake wizard and connects users with licensed professionals for guidance. Built as a full-stack TypeScript application, it features a React frontend with form-based lead capture, Express.js backend with API endpoints, and PostgreSQL database integration via Drizzle ORM.
+askNewton California is a health insurance guidance platform specifically designed for newcomers to California. The application serves three primary personas: Nomads (remote workers/contractors), Travelers (1-6 month visitors), and Students (F-1/J-1 visa holders). The platform provides proactive insurance guidance and enrollment education through an intake wizard and AI-powered recommendations. Built as a full-stack TypeScript application, it features a React frontend with form-based lead capture, Express.js backend with API endpoints, and PostgreSQL database integration via Drizzle ORM.
 
 # User Preferences
 
@@ -9,6 +9,7 @@ Preferred communication style: Simple, everyday language.
 # System Architecture
 
 ## Frontend Architecture
+
 The client-side application is built with React 18 and TypeScript, utilizing Vite as the build tool and development server. The architecture follows a component-based design pattern with:
 
 - **Routing**: Wouter for lightweight client-side routing
@@ -20,6 +21,7 @@ The client-side application is built with React 18 and TypeScript, utilizing Vit
 The application uses a wizard-style intake form that progresses through multiple steps, collecting user information and preferences before submitting leads to the backend.
 
 ## Backend Architecture
+
 The server-side implementation uses Express.js with TypeScript in an ESM module configuration. Key architectural decisions include:
 
 - **API Design**: RESTful endpoints with structured JSON responses
@@ -30,6 +32,7 @@ The server-side implementation uses Express.js with TypeScript in an ESM module 
 The backend serves both API endpoints and static files, with separate build processes for production deployment.
 
 ## Data Storage Solutions
+
 The application uses PostgreSQL as the primary database with Drizzle ORM for type-safe database operations:
 
 - **Schema Definition**: Shared TypeScript schemas between client and server
@@ -40,6 +43,7 @@ The application uses PostgreSQL as the primary database with Drizzle ORM for typ
 The storage layer includes both database persistence and in-memory fallback for development scenarios.
 
 ## Authentication and Authorization
+
 The current implementation uses a simple session-based approach with minimal authentication requirements:
 
 - **Session Management**: Express session handling with PostgreSQL session store
@@ -60,21 +64,25 @@ The application includes production-ready email automation and webhook integrati
 - **Multi-format Support**: Handles various field naming conventions (camelCase, snake_case, etc.)
 
 **Email Templates**:
+
 - Beautiful HTML emails with gradient headers, information cards, and responsive design
 - Plain text fallback for email clients without HTML support
 - Personalized subject lines and dynamic content based on user data
 - Clear call-to-action buttons for scheduling consultations
 
 **Implementation Files**:
+
 - `server/email.ts` - Email service with `sendWelcomeEmail()` and `sendLeadNotification()` functions
 - `server/routes.ts` - API endpoints with email integration on `/api/lead` and `/api/simple-lead`
 - `ZAPIER_INTEGRATION_GUIDE.md` - Complete setup guide for Zapier automation
 
 **Test Endpoints**:
+
 - `POST /api/zapier/test` - Test webhook data formatting without sending emails
 - `POST /api/email/test-welcome` - Send actual test welcome email to verify templates
 
 **Environment Variables**:
+
 - `SENDGRID_API_KEY` - SendGrid API key for email sending
 - `SENDGRID_FROM_EMAIL` - Verified sender email address
 - `WEBHOOK_URL` - Zapier webhook URL for external integrations
@@ -82,7 +90,7 @@ The application includes production-ready email automation and webhook integrati
 
 ## Society of Mind Multi-Agent System
 
-AskNewton includes a production-ready "Society of Mind" architecture - a separate Express.js service (port 4000) that orchestrates specialized AI agents for different health insurance tasks. This TypeScript implementation provides intelligent, context-aware responses across multiple channels.
+askNewton includes a production-ready "Society of Mind" architecture - a separate Express.js service (port 4000) that orchestrates specialized AI agents for different health insurance tasks. This TypeScript implementation provides intelligent, context-aware responses across multiple channels.
 
 **Status**: ✅ Production Ready v1.1.2 (January 2025)
 
@@ -114,6 +122,7 @@ AskNewton includes a production-ready "Society of Mind" architecture - a separat
 **Complete Documentation Suite:**
 
 All documentation is in the `society/` directory:
+
 - `README_FIRST.md` - Quick start guide (read this first!)
 - `DEPLOY_NOW.md` - Live deployment commands for Render/Fly.io
 - `INTEGRATION_READY.md` - Complete integration code for main app
@@ -127,6 +136,7 @@ All documentation is in the `society/` directory:
 **Data Integration:**
 
 The system includes a comprehensive plan data integration strategy covering:
+
 - Covered California API integration
 - Database schema for plan storage with periodic sync
 - Redis caching layer for performance
@@ -135,6 +145,7 @@ The system includes a comprehensive plan data integration strategy covering:
 **Intent Registry:**
 
 Extensible priority-based routing supports current and future agents:
+
 ```typescript
 {
   coverage_recommendation: { priority: 10, keywords: ['recommend', 'plan'], enabled: true },
@@ -146,7 +157,8 @@ Extensible priority-based routing supports current and future agents:
 
 **Integration with Main App:**
 
-The Society service can be integrated with the main AskNewton app for:
+The Society service can be integrated with the main askNewton app for:
+
 1. Wizard-based plan recommendations (after intake completion)
 2. WhatsApp conversational chat (via Twilio webhook)
 3. Standalone agent interactions (web, SMS, WhatsApp)
@@ -187,11 +199,13 @@ The application includes comprehensive cost optimization features to reduce Open
    - Files: `client/src/hooks/useDebouncedCallback.ts`
 
 **Cost Savings:**
+
 - Persona generation: 80% reduction (~$12/day savings)
 - Duplicate prevention: 100% elimination (~$5/day savings)
 - Projected monthly savings: $510+ at current volume
 
 **Documentation:**
+
 - Complete implementation guide: `COST_OPTIMIZATION_SUMMARY.md`
 - Migration steps, troubleshooting, and monitoring guidelines included
 
@@ -202,29 +216,34 @@ The application includes comprehensive cost optimization features to reduce Open
 The application includes comprehensive monitoring infrastructure to track OpenAI usage, costs, and cache performance:
 
 **Database Logging:**
+
 - `openai_call_log` table tracks all AI API calls with endpoint, model, tokens, and cost data
 - Integrated logging in all OpenAI service methods (persona generation, recommendations, chat, images)
 - Non-blocking async logging to avoid impacting request performance
 
 **Monitoring Capabilities:**
+
 - SQL queries for cache hit rates, cost analysis, and usage patterns
 - Grafana-ready dashboard configurations for visualization
 - Daily/weekly/monthly cost tracking and optimization insights
 - Performance metrics for persona caching and request idempotency
 
 **Test Suite:**
+
 - Vitest test files for persona caching, idempotency, and streaming endpoints
 - Integration tests verify cache hit/miss behavior and deduplication
 - SSE streaming endpoint validation
 - Template for future unit tests with mocking
 
 **Documentation:**
+
 - Complete monitoring guide: `MONITORING_AND_DASHBOARD.md`
 - SQL queries for all monitoring metrics
 - Cost estimation formulas and alert recommendations
 - Best practices for tracking AI usage and optimizing costs
 
 **Key Metrics Tracked:**
+
 - Total OpenAI API calls by endpoint and model
 - Token usage (prompt and completion) when available
 - Persona cache hit ratio and growth over time
@@ -234,6 +253,7 @@ The application includes comprehensive monitoring infrastructure to track OpenAI
 # External Dependencies
 
 ## Third-Party Services
+
 - **Neon Database**: Serverless PostgreSQL hosting with connection pooling
 - **Email Services**: Configurable email API integration for lead notifications
 - **WhatsApp Integration**: Direct messaging links for immediate user communication
@@ -242,6 +262,7 @@ The application includes comprehensive monitoring infrastructure to track OpenAI
 - **Calendly**: Embedded scheduling for consultation bookings
 
 ## UI and Development Libraries
+
 - **shadcn/ui**: Complete component library built on Radix UI primitives
 - **Radix UI**: Accessible, unstyled UI primitives for complex components
 - **Tailwind CSS**: Utility-first CSS framework with custom design system
@@ -250,6 +271,7 @@ The application includes comprehensive monitoring infrastructure to track OpenAI
 - **React Hook Form**: Performant form handling with minimal re-renders
 
 ## Build and Development Tools
+
 - **Vite**: Fast build tool with HMR and optimized production builds
 - **TypeScript**: Type safety across the entire application stack
 - **Drizzle Kit**: Database schema management and migration tools
@@ -257,6 +279,7 @@ The application includes comprehensive monitoring infrastructure to track OpenAI
 - **PostCSS**: CSS processing with Tailwind CSS integration
 
 ## Validation and Utilities
+
 - **Zod**: Runtime type validation and schema definition
 - **clsx & tailwind-merge**: Conditional CSS class management
 - **date-fns**: Date manipulation and formatting utilities

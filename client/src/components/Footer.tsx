@@ -1,5 +1,7 @@
 import { Link } from "wouter";
 import { Linkedin, Facebook } from "lucide-react";
+import RegulatoryDisclosure from "./RegulatoryDisclosure";
+import Logo from "./Logo";
 
 export default function Footer() {
   return (
@@ -7,15 +9,10 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="grid md:grid-cols-4 gap-8 mb-8">
           <div>
-            <div className="flex items-center space-x-2 mb-4">
-              <div className="w-6 h-6 bg-primary rounded flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-xs">AN</span>
-              </div>
-              <span className="font-semibold text-foreground">AskNewton</span>
-            </div>
+            <Logo className="mb-4" />
             <p className="text-sm text-muted-foreground">Simple health insurance guidance for California newcomers.</p>
           </div>
-          
+
           <div>
             <h3 className="font-semibold text-foreground mb-3">Personas</h3>
             <div className="space-y-2 text-sm">
@@ -30,7 +27,7 @@ export default function Footer() {
               </Link>
             </div>
           </div>
-          
+
           <div>
             <h3 className="font-semibold text-foreground mb-3">Legal</h3>
             <div className="space-y-2 text-sm">
@@ -48,22 +45,22 @@ export default function Footer() {
               </a>
             </div>
           </div>
-          
+
           <div>
             <h3 className="font-semibold text-foreground mb-3">Contact</h3>
             <div className="space-y-2 text-sm">
-              <a 
-                href={`https://wa.me/${import.meta.env.VITE_WHATSAPP_NUMBER || '14157697858'}`} 
-                target="_blank" 
+              <a
+                href={`https://wa.me/${import.meta.env.VITE_WHATSAPP_NUMBER || '14157697858'}`}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="block text-muted-foreground hover:text-foreground"
                 data-testid="footer-whatsapp"
               >
                 WhatsApp
               </a>
-              <a 
-                href={import.meta.env.VITE_CALENDLY_URL || 'https://calendly.com/asknewton/intro'} 
-                target="_blank" 
+              <a
+                href={import.meta.env.VITE_CALENDLY_URL || 'https://calendly.com/asknewton/intro'}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="block text-muted-foreground hover:text-foreground"
                 data-testid="footer-calendly"
@@ -71,12 +68,12 @@ export default function Footer() {
                 Book a call
               </a>
             </div>
-            
+
             <h3 className="font-semibold text-foreground mb-3 mt-6">Follow Us</h3>
             <div className="flex space-x-4">
-              <a 
-                href="https://www.linkedin.com/company/108558966/" 
-                target="_blank" 
+              <a
+                href="https://www.linkedin.com/company/108558966/"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 data-testid="footer-linkedin"
@@ -84,9 +81,9 @@ export default function Footer() {
               >
                 <Linkedin className="w-5 h-5" />
               </a>
-              <a 
-                href="https://www.facebook.com/profile.php?id=61581110065448" 
-                target="_blank" 
+              <a
+                href="https://www.facebook.com/profile.php?id=61581110065448"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 data-testid="footer-facebook"
@@ -97,9 +94,9 @@ export default function Footer() {
             </div>
           </div>
         </div>
-        
+
         <div className="pt-8 border-t border-border text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} AskNewton • Information only; not an insurer. If this is an emergency, call 911.</p>
+          <p>© 2026 askNewton, Inc. • Information only; not an insurer. If this is an emergency, call 911.</p>
         </div>
       </div>
     </footer>

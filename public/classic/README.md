@@ -1,6 +1,6 @@
-# Classic AskNewton Site
+# Classic askNewton Site
 
-This folder contains the legacy AskNewton website content.
+This folder contains the legacy askNewton website content.
 
 ## 📁 Folder Structure
 
@@ -15,7 +15,7 @@ public/classic/
 
 ## 🔄 Migrating Your Existing Content
 
-If you have an existing AskNewton site on another Replit project:
+If you have an existing askNewton site on another Replit project:
 
 1. **Export Content from Old Project**:
    - Download all HTML, CSS, JS, and image files

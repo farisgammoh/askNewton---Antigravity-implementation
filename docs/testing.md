@@ -1,9 +1,9 @@
 # Testing Guide
 
-This document explains how to run, structure, and extend the testing environment for AskNewton.  
+This document explains how to run, structure, and extend the testing environment for askNewton.  
 It covers webhook testing, agent testing, OpenAI cost-control tests, integration tests, and manual verification flows.
 
-AskNewton uses a lightweight but powerful testing setup built around:
+askNewton uses a lightweight but powerful testing setup built around:
 
 - **Node + TypeScript**
 - **Custom test scripts (`test/` folder)**
@@ -19,17 +19,22 @@ AskNewton uses a lightweight but powerful testing setup built around:
 AskNewton’s testing approach follows three rules:
 
 ### **1. Test the real system, not mocks**
+
 For critical components (webhooks, agents, HMAC, cost controls), we test against the actual running code.
 
 ### **2. Deterministic and idempotent**
+
 Every test run should:
+
 - produce predictable results  
 - clean up after itself  
 - safely ignore duplicates  
 - never break production  
 
 ### **3. Tests should be runnable from anywhere**
+
 You can run tests from:
+
 - Replit Shell  
 - Local machine  
 - External CI (GitHub Actions – coming soon)  
@@ -70,6 +75,7 @@ malformed.json
 # ⚙️ 3. Setup Before Running Tests
 
 ### **3.1 Install dependencies**
+
 ```bash
 npm install
 ````
@@ -105,11 +111,11 @@ npm run test:end
 
 Each script:
 
-* Loads a known JSON body
-* Generates the correct HMAC
-* Sends it to your running webhook server
-* Verifies HTTP 200 + JSON response
-* Logs the event ID in memory
+- Loads a known JSON body
+- Generates the correct HMAC
+- Sends it to your running webhook server
+- Verifies HTTP 200 + JSON response
+- Logs the event ID in memory
 
 ---
 
@@ -139,7 +145,7 @@ curl -X POST "$REPL_HOST/webhooks/eleven/conversation-end" \
   -d "$BODY"
 ```
 
-### Expected output:
+### Expected output
 
 ```json
 { "ok": true }
@@ -165,9 +171,9 @@ GET /events
 
 Expected behavior:
 
-* only **1 entry** stored
-* duplicates **ignored**
-* no errors
+- only **1 entry** stored
+- duplicates **ignored**
+- no errors
 
 This proves signature validation + event ID de-duplication works.
 
@@ -185,12 +191,12 @@ These tests validate:
 
 ### **Agent orchestration**
 
-* persona selection
-* cost-control validation
-* message routing
-* expected return types
+- persona selection
+- cost-control validation
+- message routing
+- expected return types
 
-### Run:
+### Run
 
 ```bash
 node test/agent.test.js
@@ -208,10 +214,10 @@ test/load.test.js
 
 These tests check:
 
-* caching layer returns hits
-* idempotency key prevents duplicate OpenAI calls
-* usage logs are written correctly
-* cost estimates do not exceed thresholds
+- caching layer returns hits
+- idempotency key prevents duplicate OpenAI calls
+- usage logs are written correctly
+- cost estimates do not exceed thresholds
 
 Run:
 
@@ -230,7 +236,7 @@ All calls logged successfully
 
 # ❤️‍🩹 8. Health & Liveness Tests
 
-## Check liveness:
+## Check liveness
 
 ```bash
 curl "$REPL_HOST/healthz"
@@ -242,13 +248,13 @@ Expect:
 { "ok": true, "service": "asknewton-webhooks" }
 ```
 
-## Check version:
+## Check version
 
 ```bash
 curl "$REPL_HOST/version"
 ```
 
-## Check recent webhook events:
+## Check recent webhook events
 
 ```bash
 curl "$REPL_HOST/events"
@@ -260,7 +266,7 @@ curl "$REPL_HOST/events"
 
 To confirm security hardening, test the following:
 
-### ❌ Wrong signature:
+### ❌ Wrong signature
 
 ```bash
 curl -X POST "$REPL_HOST/webhooks/eleven/conversation-init" \
@@ -274,7 +280,7 @@ Expect:
 401 Unauthorized
 ```
 
-### ❌ Malformed JSON:
+### ❌ Malformed JSON
 
 ```bash
 curl -X POST "$REPL_HOST/webhooks/eleven/conversation-init" \
@@ -288,17 +294,17 @@ Expect:
 400 Invalid JSON
 ```
 
-### ❌ Wrong secret:
+### ❌ Wrong secret
 
 Change `ELEVEN_INIT_SECRET` temporarily and retest.
 Expect all webhook tests to **fail signature verification**.
 
 These tests ensure:
 
-* HMAC validation
-* raw-body integrity
-* input sanitization
-* error security
+- HMAC validation
+- raw-body integrity
+- input sanitization
+- error security
 
 ---
 
@@ -312,11 +318,11 @@ npm test
 
 This runs:
 
-* agent tests
-* webhook tests
-* security tests
-* load/cost tests
-* health checks
+- agent tests
+- webhook tests
+- security tests
+- load/cost tests
+- health checks
 
 ---
 
@@ -330,11 +336,11 @@ We are preparing GitHub Actions workflows:
 
 This will include:
 
-* webhook signature tests
-* agent orchestration tests
-* OpenAI cost simulations
-* Replit API integration checks
-* publishing pipeline verification
+- webhook signature tests
+- agent orchestration tests
+- OpenAI cost simulations
+- Replit API integration checks
+- publishing pipeline verification
 
 ---
 

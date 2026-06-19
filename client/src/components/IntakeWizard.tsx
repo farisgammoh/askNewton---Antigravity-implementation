@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import RegulatoryDisclosure from "./RegulatoryDisclosure";
 
 const steps = [
   { title: "Let's start with the basics", fields: ["persona", "name", "email", "phone"] },
@@ -30,7 +31,7 @@ export default function IntakeWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
+
   const form = useForm<LeadFormData>({
     resolver: zodResolver(leadSchema),
     defaultValues: {
@@ -71,7 +72,7 @@ export default function IntakeWizard() {
         localStorage.setItem('lastLeadId', response.leadId);
         console.log('✅ Lead ID stored:', response.leadId);
       }
-      
+
       toast({
         title: "Assessment submitted!",
         description: "We'll email you your personalized recommendations within 24 hours.",
@@ -90,7 +91,7 @@ export default function IntakeWizard() {
   const nextStep = async () => {
     const currentFields = steps[currentStep].fields;
     const result = await form.trigger(currentFields as any);
-    
+
     if (result && currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
     }
@@ -141,8 +142,8 @@ export default function IntakeWizard() {
                       <FormItem>
                         <FormLabel>Which describes you best?</FormLabel>
                         <FormControl>
-                          <RadioGroup 
-                            value={field.value} 
+                          <RadioGroup
+                            value={field.value}
                             onValueChange={field.onChange}
                             className="grid gap-3"
                             data-testid="input-persona"
@@ -316,8 +317,8 @@ export default function IntakeWizard() {
                       <FormItem>
                         <FormLabel>Do you currently have health insurance? *</FormLabel>
                         <FormControl>
-                          <RadioGroup 
-                            value={field.value} 
+                          <RadioGroup
+                            value={field.value}
                             onValueChange={field.onChange}
                             className="grid gap-3"
                             data-testid="input-current-coverage"
@@ -386,8 +387,8 @@ export default function IntakeWizard() {
                       <FormItem>
                         <FormLabel>Who needs coverage? *</FormLabel>
                         <FormControl>
-                          <RadioGroup 
-                            value={field.value} 
+                          <RadioGroup
+                            value={field.value}
                             onValueChange={field.onChange}
                             className="grid gap-3"
                             data-testid="input-dependents"
@@ -422,10 +423,10 @@ export default function IntakeWizard() {
                       <FormItem>
                         <FormLabel>Address in California (optional)</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="Street address, city, state" 
+                          <Textarea
+                            placeholder="Street address, city, state"
                             rows={3}
-                            {...field} 
+                            {...field}
                             data-testid="input-address"
                           />
                         </FormControl>
@@ -447,10 +448,10 @@ export default function IntakeWizard() {
                       <FormItem>
                         <FormLabel>Budget or provider preferences</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="e.g., 'Budget under $200/month' or 'Need access to UCSF doctors'" 
+                          <Textarea
+                            placeholder="e.g., 'Budget under $200/month' or 'Need access to UCSF doctors'"
                             rows={3}
-                            {...field} 
+                            {...field}
                             data-testid="input-budget-network"
                           />
                         </FormControl>
@@ -466,10 +467,10 @@ export default function IntakeWizard() {
                       <FormItem>
                         <FormLabel>Anything else we should know?</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="Special circumstances, concerns, questions..." 
+                          <Textarea
+                            placeholder="Special circumstances, concerns, questions..."
                             rows={3}
-                            {...field} 
+                            {...field}
                             data-testid="input-notes"
                           />
                         </FormControl>
@@ -508,17 +509,18 @@ export default function IntakeWizard() {
                           </FormControl>
                           <div className="space-y-1 leading-none">
                             <FormLabel>
-                              I agree to receive my personalized insurance recommendations via email and understand that AskNewton is not an insurance company but provides guidance and enrollment assistance. *
+                              I agree to receive my personalized insurance recommendations via email and understand that askNewton is an informational guidance service and not a licensed insurance producer. *
                             </FormLabel>
                           </div>
                         </FormItem>
                       )}
                     />
-                    
+
                     <p className="text-xs text-muted-foreground">
                       By submitting this form, you agree to our Terms of Service and Privacy Policy.
                     </p>
                   </div>
+                  <RegulatoryDisclosure />
                 </>
               )}
             </CardContent>
@@ -537,10 +539,10 @@ export default function IntakeWizard() {
               <ChevronLeft className="w-4 h-4 mr-2" />
               Previous
             </Button>
-            
+
             {currentStep < steps.length - 1 ? (
-              <Button 
-                type="button" 
+              <Button
+                type="button"
                 onClick={nextStep}
                 data-testid="button-next"
               >
@@ -548,8 +550,8 @@ export default function IntakeWizard() {
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 disabled={submitMutation.isPending}
                 className="bg-accent text-accent-foreground hover:bg-accent/90"
                 data-testid="button-submit"
