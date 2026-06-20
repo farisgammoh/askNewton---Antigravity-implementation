@@ -6,7 +6,7 @@ export interface FAQ {
 export const generalFAQs: FAQ[] = [
   {
     question: "Is AskNewton an insurance company?",
-    answer: "No, we're not an insurer. We're licensed insurance professionals who provide guidance and help you navigate California's health insurance landscape."
+    answer: "No, we're not an insurer and we're not a licensed insurance producer. We're a health insurance guidance service that helps you understand your options and navigate the California health insurance landscape."
   },
   {
     question: "How much does your service cost?",

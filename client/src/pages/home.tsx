@@ -125,7 +125,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row items-center justify-center space-y-4 md:space-y-0 md:space-x-8 text-sm text-muted-foreground">
             <div className="flex items-center space-x-2">
               <Check className="w-5 h-5 text-accent" aria-hidden="true" />
-              <span>Licensed insurance professionals</span>
+              <span>Health Insurance Guidance</span>
             </div>
             <div className="flex items-center space-x-2">
               <Check className="w-5 h-5 text-accent" aria-hidden="true" />

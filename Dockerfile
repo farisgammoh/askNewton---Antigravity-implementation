@@ -1,42 +1,15 @@
-# Dockerfile for AskNewton Enhanced Webhook Server
 FROM node:20-alpine
-
-# Set working directory
 WORKDIR /app
-
-# Install dependencies first (for layer caching)
-# Install dependencies (including devDependencies for build)
 COPY package*.json ./
-RUN npm ci
-
-# Copy application code
+RUN npm install --ignore-scripts
 COPY . .
-
-# Build the application
 RUN npm run build
-
-# Create directories for assets and databases
 RUN mkdir -p public lib attached_assets && \
     chown -R node:node /app
-
-# Switch to non-root user
 USER node
-
-# Set environment variables
 ENV PORT=3000
 ENV NODE_ENV=production
-
-# Expose port
 EXPOSE 3000
-
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node -e "
-    fetch('http://localhost:3000/healthz')
-      .then(r => r.json())
-      .then(d => d.ok ? process.exit(0) : process.exit(1))
-      .catch(() => process.exit(1))
-  " || exit 1
-
-# Start command
+  CMD wget -qO- http://localhost:3000/healthz || exit 1
 CMD ["npm", "run", "start"]

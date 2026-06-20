@@ -6,6 +6,7 @@ import { z } from "zod";
 import { sendLeadNotification, sendWelcomeEmail, type LeadNotificationData, type OnboardingEmailData } from "./email";
 import { hubSpotService } from "./services/hubspot";
 import { askNewtonAI } from "./services/openai";
+import { ehrRouter } from "./routes/ehrIntegration";
 import { personaSchema, recommendationSchema, messageSchema, personaSelectionSchema, googleAdsLeadSchema, simpleOnboardingSchema } from "@shared/schema";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -134,6 +135,9 @@ async function zapMirror(eventName: string, payload: any) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Mount EHR integrations router
+  app.use("/api/integrations/ehr", ehrRouter);
+
   // Serve static files from public/ directory (must be before API routes)
   // This allows /classic and other static content to be served correctly
   const publicPath = path.resolve(process.cwd(), "public");

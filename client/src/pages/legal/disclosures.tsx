@@ -45,7 +45,7 @@ export default function Disclosures() {
                 <li>Provide educational information about health insurance options</li>
                 <li>Offer personalized recommendations based on your situation</li>
                 <li>Assist with enrollment in insurance plans</li>
-                <li>Connect you with licensed insurance professionals</li>
+                <li>Connect you with health insurance guidance resources</li>
               </ul>
             </section>
 
@@ -55,8 +55,8 @@ export default function Disclosures() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold text-foreground mb-3">3. License Information</h2>
-              <p>Our team includes licensed insurance professionals authorized to sell insurance in California. License information is available upon request.</p>
+              <h2 className="text-xl font-semibold text-foreground mb-3">3. What askNewton Is and Is Not</h2>
+              <p>askNewton is a health insurance guidance service. We are not a licensed insurance producer or broker, and we do not sell insurance. For licensed insurance advice, consult a licensed insurance professional or visit coveredca.gov.</p>
             </section>
 
             <section>

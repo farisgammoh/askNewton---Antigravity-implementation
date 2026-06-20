@@ -363,6 +363,7 @@ Provide practical, specific advice. When appropriate, recommend they speak with 
 
     try {
       // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+      // TODO: add output moderation pass before v1 public launch
       const completion = await openai.chat.completions.create({
         model: this.model,
         messages: messages as any,
