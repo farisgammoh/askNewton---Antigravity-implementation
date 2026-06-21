@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #FAF9F6; /* Warm near-white */
+    --foreground: #121212; /* Near-black */
+    --accent: #2563EB; /* Confident accent color (royal blue) */
+    --accent-hover: #1D4ED8;
+    --card-bg: #FFFFFF;
+    --border-color: #E2E8F0;
+    
+    /* Success/Warning pairing for deadlines */
+    --success: #10B981;
+    --success-bg: #ECFDF5;
+    --warning: #F59E0B;
+    --warning-bg: #FFFBEB;
+    
+    --muted: #64748B;
+    --muted-bg: #F1F5F9;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), sans-serif;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-card-bg: var(--card-bg);
+  --color-border-color: var(--border-color);
+  
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  
+  --color-muted: var(--muted);
+  --color-muted-bg: var(--muted-bg);
+  
+  --font-sans: var(--font-inter);
+}
+
+/* Micro-animations and transitions */
+.transition-smooth {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
