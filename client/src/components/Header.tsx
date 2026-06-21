@@ -42,6 +42,20 @@ export default function Header() {
       >
         Student
       </Link>
+      <a 
+        href="/#waitlist" 
+        onClick={(e) => {
+          onLinkClick();
+          if (location === "/") {
+            e.preventDefault();
+            document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" });
+          }
+        }}
+        className="text-muted-foreground hover:text-foreground transition-colors"
+        data-testid="nav-waitlist"
+      >
+        Join Waitlist
+      </a>
       <div className={`${mobile ? 'flex flex-col space-y-2' : 'flex space-x-2'}`}>
         <Link href="/simple-start" onClick={onLinkClick}>
           <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground" data-testid="button-simple-start">

@@ -4,6 +4,7 @@ import Hero from "@/components/marketing/hero";
 import CTA from "@/components/marketing/cta";
 import FAQ from "@/components/FAQ";
 import PersonaCard from "@/components/PersonaCard";
+import WaitlistForm from "@/components/WaitlistForm";
 import { Check, Laptop, Globe, GraduationCap } from "lucide-react";
 
 export default function Home() {
@@ -177,6 +178,12 @@ export default function Home() {
         </section>
 
         <FAQ />
+
+        <section id="waitlist" className="py-16 bg-muted/20 border border-border/50 rounded-2xl px-4">
+          <div className="max-w-4xl mx-auto">
+            <WaitlistForm source="home" />
+          </div>
+        </section>
       </div>
     </Layout>
   );
