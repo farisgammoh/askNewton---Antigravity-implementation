@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { BrainResult } from '../../../lib/brain/types';
+import { rateLimitOrResponse } from '../../../lib/rateLimit';
 
 // Deterministic template fallback renderer if API key is missing
 function generateFallbackExplanation(brainResult: BrainResult, lang: 'en' | 'es' | 'ar'): string {
@@ -56,6 +57,11 @@ function generateFallbackExplanation(brainResult: BrainResult, lang: 'en' | 'es'
 
 export async function POST(req: NextRequest) {
   try {
+    // This route calls a paid LLM API on every request — cap it tighter
+    // than the form-submission routes.
+    const limited = rateLimitOrResponse(req, 'explain', { limit: 10, windowMs: 10 * 60 * 1000 });
+    if (limited) return limited;
+
     const body = await req.json();
     const { brainResult, language = 'en' } = body as { brainResult: BrainResult; language: 'en' | 'es' | 'ar' };
 

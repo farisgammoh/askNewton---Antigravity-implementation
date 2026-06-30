@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { upsertAirtableLead, upsertHubspotLead } from '../../../lib/crm';
+import { rateLimitOrResponse } from '../../../lib/rateLimit';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -11,6 +12,9 @@ const LANGUAGES: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
+    const limited = rateLimitOrResponse(req, 'waitlist', { limit: 5, windowMs: 60 * 1000 });
+    if (limited) return limited;
+
     let body;
     try {
       body = await req.json();

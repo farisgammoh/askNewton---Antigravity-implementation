@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '../../../lib/db';
 import { upsertAirtableLead, upsertHubspotLead } from '../../../lib/crm';
+import { rateLimitOrResponse } from '../../../lib/rateLimit';
 
 const LANGUAGES: Record<string, string> = {
   en: 'English',
@@ -10,6 +11,9 @@ const LANGUAGES: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
+    const limited = rateLimitOrResponse(req, 'leads', { limit: 5, windowMs: 60 * 1000 });
+    if (limited) return limited;
+
     const body = await req.json();
     const {
       email,

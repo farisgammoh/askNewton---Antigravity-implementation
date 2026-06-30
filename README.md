@@ -40,10 +40,11 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Run the Insurance Brain test suite:
+Run the test suite (Insurance Brain unit tests + API route tests):
 
 ```bash
 npm test
+npm run typecheck
 ```
 
 ## Environment variables
@@ -51,11 +52,38 @@ npm test
 | Variable | Used by | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | `/api/explain` | Claude explanation layer. Falls back to a static template if unset. |
-| `DATABASE_URL` | `lib/db.ts` | Postgres connection string. Falls back to local `db.json` if unset. |
-| `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, `AIRTABLE_WAITLIST_TABLE` | `/api/waitlist` | Airtable upsert target for waitlist signups. |
-| `HUBSPOT_TOKEN` / `HUBSPOT_ACCESS_TOKEN` | `lib/crm.ts`, `/api/waitlist` | HubSpot CRM contact/call sync. |
+| `DATABASE_URL` | `lib/db.ts` | Postgres connection string. **Required in production** — `lib/db.ts` throws on first use instead of silently falling back to the ephemeral local `db.json` when `NODE_ENV=production` and this is unset. Optional in development/test. |
+| `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, `AIRTABLE_WAITLIST_TABLE` | `/api/waitlist`, `/api/leads` | Airtable upsert target — the canonical CRM for every lead source. |
+| `HUBSPOT_TOKEN` / `HUBSPOT_ACCESS_TOKEN` | `lib/crm.ts`, `/api/waitlist`, `/api/leads` | HubSpot CRM contact/call sync. |
 | `BACKEND_BEARER_TOKEN` | `lib/crm.ts` (`verifyElevenLabsAuth`) | Shared secret authenticating inbound ElevenLabs webhook/API calls. |
 | `ZAPIER_HOOK_URL` | `lib/crm.ts` (`zapMirror`) | Optional event mirror to Zapier. Skipped if unset. |
+| `LOCAL_DB_PATH` | `lib/db.ts` | Test-only override for the local JSON DB fallback path, so tests never read/write the real `db.json`. Not meant to be set in dev/prod. |
+
+## Rate limiting
+
+`/api/explain` (calls the paid Anthropic API), `/api/leads`, and `/api/waitlist` are
+rate-limited per IP via `lib/rateLimit.ts`. This is an **in-memory, per-instance**
+limiter — a best-effort guard against casual abuse and runaway cost, not a distributed
+rate limiter. On Vercel each serverless instance has its own memory, so limits aren't
+shared across cold starts/regions. If real abuse shows up, replace it with a shared
+store (Upstash Redis / Vercel KV) behind the same `checkRateLimit()` signature.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every PR and push to `main`: `npm ci` → lint
+(non-blocking, see below) → typecheck → test → build.
+
+## Known gaps
+
+- **Lint debt**: `npm run lint` currently reports ~25 pre-existing issues (mostly
+  `@typescript-eslint/no-explicit-any` in catch blocks, a couple of unescaped JSX
+  entities, one `react-hooks/set-state-in-effect` in `lib/i18n/LanguageContext.tsx`).
+  None of these are new — CI runs lint as a non-blocking step until this is cleaned up
+  and the gate can be turned strict.
+- **Git history**: an early commit had real lead PII committed into `db.json`. Current
+  `main` no longer has that data in the file, but it's still recoverable from history —
+  scrubbing it requires a force-push, which is the founder's call to make and execute.
+- **No error monitoring** (e.g. Sentry) wired in yet.
 
 ## Deploy
 
