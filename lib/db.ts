@@ -31,7 +31,8 @@ export interface ConsentLog {
   scope: string;
 }
 
-const LOCAL_DB_PATH = path.join(process.cwd(), 'db.json');
+// Overridable so tests don't read/write the real db.json in the repo.
+const LOCAL_DB_PATH = process.env.LOCAL_DB_PATH || path.join(process.cwd(), 'db.json');
 
 // Interface for DB operations
 export interface Database {
@@ -226,9 +227,44 @@ class PostgresDatabase implements Database {
   }
 }
 
-// Factory to export database instance
-const databaseUrl = process.env.DATABASE_URL;
-export const db: Database = databaseUrl
-  ? new PostgresDatabase(databaseUrl)
-  : new LocalJsonDatabase();
+// Lazily construct the database singleton. This must NOT run at module-load
+// time: Next.js's build-time "collect page data" step imports every route
+// module with NODE_ENV=production, so an eager check here would fail the
+// build itself rather than catching a real misconfigured deploy. Instead we
+// defer construction (and the production guard below) until the first
+// actual database call at request time.
+let instance: Database | null = null;
+
+function getDbInstance(): Database {
+  if (instance) return instance;
+
+  const databaseUrl = process.env.DATABASE_URL;
+
+  // The local JSON fallback is ephemeral on Vercel (lost on every
+  // redeploy/cold start) and is not an acceptable place for real lead data.
+  // Fail loudly the first time a request tries to use it in production,
+  // instead of silently dropping leads on the floor.
+  if (!databaseUrl && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'DATABASE_URL is required in production. Refusing to fall back to the ephemeral local JSON database — set DATABASE_URL or explicitly opt out by reviewing lib/db.ts.'
+    );
+  }
+
+  instance = databaseUrl ? new PostgresDatabase(databaseUrl) : new LocalJsonDatabase();
+  return instance;
+}
+
+// Every Database method is async, so callers (and tests) reasonably expect
+// db.someMethod() to return a rejected promise on failure, never throw
+// synchronously. Wrapping each method call in an async function converts the
+// production-guard's synchronous throw into a proper rejection.
+export const db: Database = new Proxy({} as Database, {
+  get(_target, prop) {
+    return async (...args: unknown[]) => {
+      const real = getDbInstance() as unknown as Record<PropertyKey, unknown>;
+      const value = real[prop];
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).apply(real, args) : value;
+    };
+  },
+});
 export default db;
