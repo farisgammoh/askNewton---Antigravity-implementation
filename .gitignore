@@ -43,3 +43,6 @@ next-env.d.ts
 # google cloud sdk
 google-cloud-sdk/
 google-cloud-cli-darwin-arm.tar.gz
+
+# local lead/PII fallback database (never commit real lead data)
+db.json

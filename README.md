@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# askNewton
 
-## Getting Started
+askNewton is a proactive, multilingual AI insurance guidance product. A deterministic
+rules engine (the "Insurance Brain") owns every recommendation, dollar figure, and
+deadline; an LLM explanation layer only narrates that output in plain language and is
+never allowed to invent or alter a number. askNewton is an informational guidance
+service — not a licensed insurance producer or broker — operated by askNewton, Inc.,
+part of the Newton Insurance plc family.
 
-First, run the development server:
+## Architecture
+
+- **Insurance Brain** (`lib/brain/`) — deterministic TypeScript rules engine: enrollment
+  window/deadline logic, ACA subsidy eligibility, plan ranking. Pure functions, no LLM
+  calls, covered by `lib/brain/brain.test.ts`.
+- **`/api/recommend`** — the only place a `Profile` is turned into a `BrainResult`. The
+  client (`app/guide/page.tsx`) always calls this route; it never runs the Brain itself,
+  so a `BrainResult` can't be forged client-side before being explained.
+- **`/api/explain`** — sends a `BrainResult` to Claude with a system prompt that
+  forbids inventing, altering, or recomputing any value; falls back to a deterministic
+  template (`generateFallbackExplanation`) if `ANTHROPIC_API_KEY` is unset or the API
+  call fails.
+- **`app/webhooks/eleven/*`** — ElevenLabs voice webhooks (conversation start/end,
+  transfer, voicemail), authenticated via `BACKEND_BEARER_TOKEN`, mirrored to HubSpot
+  and optionally Zapier.
+- **Lead capture** — `/api/leads` (Postgres if `DATABASE_URL` is set, else a local
+  `db.json` fallback — never commit real lead data to that file) and `/api/waitlist`
+  (Airtable + HubSpot). These are currently two separate paths; see open items below.
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Run the Insurance Brain test suite:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+```
 
-## Learn More
+## Environment variables
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Used by | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `/api/explain` | Claude explanation layer. Falls back to a static template if unset. |
+| `DATABASE_URL` | `lib/db.ts` | Postgres connection string. Falls back to local `db.json` if unset. |
+| `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID`, `AIRTABLE_WAITLIST_TABLE` | `/api/waitlist` | Airtable upsert target for waitlist signups. |
+| `HUBSPOT_TOKEN` / `HUBSPOT_ACCESS_TOKEN` | `lib/crm.ts`, `/api/waitlist` | HubSpot CRM contact/call sync. |
+| `BACKEND_BEARER_TOKEN` | `lib/crm.ts` (`verifyElevenLabsAuth`) | Shared secret authenticating inbound ElevenLabs webhook/API calls. |
+| `ZAPIER_HOOK_URL` | `lib/crm.ts` (`zapMirror`) | Optional event mirror to Zapier. Skipped if unset. |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deployed on Vercel. All deploys, secrets, and infra changes are handled by the
+founder — this repo does not contain deploy automation.

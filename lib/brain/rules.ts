@@ -67,28 +67,23 @@ export function evaluateEligibility(profile: Profile): {
   notes: string[];
 } {
   const size = profile.householdSize || 1;
-  const fpl = getFPLForHousehold(size);
+  const fpl = getFPLForHousehold(size, profile.state);
   const notes: string[] = [];
 
-  // Map income bands to estimated multipliers of FPL
-  let estimatedFplPct = 250; // default to Mid
-  if (profile.incomeBand === 'low') {
-    estimatedFplPct = 135;
-  } else if (profile.incomeBand === 'high') {
-    estimatedFplPct = 500;
-  }
+  // NOTE: estimatedFplPct bands and the 8.39% affordability threshold below
+  // are simplified placeholders, not the IRS applicable-percentage sliding
+  // scale. Treat all subsidy figures here as illustrative estimates only —
+  // see lib/brain/seedData.ts FPL_TABLE notes for current known gaps.
 
-  const estimatedIncome = (fpl * estimatedFplPct) / 100;
-  
   if (profile.hasEmployerCoverage) {
-    notes.push('Since you have employer-sponsored coverage, you generally do not qualify for premium tax credits unless your employer plan is deemed unaffordable (exceeds ~8.39% of household income).');
+    notes.push('Since you have employer-sponsored coverage, you generally do not qualify for premium tax credits unless your employer plan is deemed unaffordable (exceeds approximately 8.39% of household income, per the most recently published IRS affordability percentage — confirm the current year\'s figure before relying on this).');
     return {
       subsidyLikely: false,
       notes,
     };
   }
 
-  notes.push(`Based on your household size of ${size}, 100% of the Federal Poverty Level (FPL) is $${fpl.toLocaleString()}.`);
+  notes.push(`Based on your household size of ${size}, 100% of the Federal Poverty Level (FPL) is $${fpl.toLocaleString()} (2024 HHS guideline for the 48 contiguous states/DC — illustrative estimate, not the current plan year's confirmed figure).`);
 
   if (profile.incomeBand === 'low') {
     notes.push('Your estimated household income is below 150% of the FPL. You likely qualify for Silver-tier Cost-Sharing Reductions (CSR) which significantly lower deductibles, and near-zero premium plans.');
@@ -258,7 +253,7 @@ export function runInsuranceBrain(profile: Profile): BrainResult {
     topRisk,
     nextAction,
     sources: [
-      'Affordable Care Act (ACA) Federal poverty level guidelines (2026)',
+      'Affordable Care Act (ACA) Federal poverty level guidelines (2024 HHS figures, illustrative)',
       'Standard Age Curve Adjustment factor table',
       'Newton Insurance Seed Marketplace Plan Database v1.0',
       profile.isNewcomer ? 'Special Enrollment Rules (8 CFR § 214.1)' : 'Standard Open Enrollment rules (45 CFR § 155.410)',

@@ -12,7 +12,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'askNewton | Proactive Multilingual Health Insurance Guide',
   description:
-    'Licensed AI insurance guide explaining US health insurance, enrollment deadlines, and plan eligibility in your native language before you make critical mistakes.',
+    'Proactive AI insurance guidance explaining US health insurance, enrollment deadlines, and plan eligibility in your native language before you make critical mistakes. askNewton is an informational guidance service, not a licensed insurance producer or broker.',
 };
 
 export default function RootLayout({

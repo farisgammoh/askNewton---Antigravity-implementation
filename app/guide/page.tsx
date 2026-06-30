@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useTranslation } from '../../lib/i18n/LanguageContext';
-import { runInsuranceBrain } from '../../lib/brain/rules';
 import { Profile, BrainResult, RankedPlan } from '../../lib/brain/types';
 import { 
   Calendar, 
@@ -70,7 +69,9 @@ export default function GuidePage() {
 
     setLoading(true);
     try {
-      // 1. Run deterministic Insurance Brain locally
+      // 1. Run the deterministic Insurance Brain server-side — the client
+      // never computes or holds an editable BrainResult before it's sent
+      // to the explanation layer.
       const profile: Profile = {
         state,
         language,
@@ -81,8 +82,16 @@ export default function GuidePage() {
         needs,
         age
       };
-      
-      const brainRes = runInsuranceBrain(profile);
+
+      const brainHttpRes = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile)
+      });
+      if (!brainHttpRes.ok) {
+        throw new Error(`Insurance Brain request failed: ${brainHttpRes.status}`);
+      }
+      const brainRes: BrainResult = await brainHttpRes.json();
       setBrainResult(brainRes);
 
       // 2. Query AI Explanation layer API

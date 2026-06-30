@@ -12,8 +12,13 @@ export interface SamplePlan {
   description: string;
 }
 
-// 2026 Federal Poverty Level (FPL) Guidelines (annual income)
-// Used to compute subsidy eligibility (e.g., qualifying for ACA subsidies or Medicaid)
+// 2024 HHS Federal Poverty Level (FPL) Guidelines for the 48 contiguous
+// states and DC (annual income). NOT yet updated to the current plan year —
+// confirm against the latest HHS poverty guidelines before relying on this
+// for real eligibility determinations.
+// IMPORTANT: Alaska and Hawaii have separate, higher FPL tables under
+// federal guidelines. This table does not include those figures; treat any
+// AK/HI household as unsupported until that data is added.
 export const FPL_TABLE: Record<number, number> = {
   1: 15060,
   2: 20440,
@@ -25,7 +30,12 @@ export const FPL_TABLE: Record<number, number> = {
   8: 52720,
 };
 
-export function getFPLForHousehold(size: number): number {
+export function getFPLForHousehold(size: number, state?: string): number {
+  if (state === 'AK' || state === 'HI') {
+    throw new Error(
+      `getFPLForHousehold: Alaska/Hawaii FPL increments are not yet implemented (state=${state}). Refusing to return a contiguous-US figure for this household.`
+    );
+  }
   const baseSize = Math.max(1, Math.min(8, Math.floor(size)));
   const baseValue = FPL_TABLE[baseSize];
   if (size > 8) {

@@ -1,41 +1,5 @@
 {
-  "leads": [
-    {
-      "email": "redacted-lead@example.com",
-      "phone": "+10000000000",
-      "language": "en",
-      "state": "California",
-      "consentToContact": true,
-      "consentTimestamp": "2026-06-18T00:49:38.909Z",
-      "sourcePage": "Guide Result Reminders",
-      "id": "lead_1781743778909_wj1vks8qa"
-    }
-  ],
-  "reminders": [
-    {
-      "leadId": "lead_1781743778909_wj1vks8qa",
-      "windowType": "Special Enrollment Period (Newcomer)",
-      "deadlineDate": "2026-08-15",
-      "channel": "whatsapp",
-      "optedIn": true,
-      "optOutToken": "opt_wfzjircyc1",
-      "id": "rem_1781743778909_wr0ylwzig"
-    }
-  ],
-  "consentLogs": [
-    {
-      "leadId": "lead_1781743778909_wj1vks8qa",
-      "purpose": "Waitlist & general updates enrollment",
-      "grantedAt": "2026-06-18T00:49:38.909Z",
-      "scope": "contact_via_email_or_phone",
-      "id": "consent_1781743778909_0857gmnmz"
-    },
-    {
-      "leadId": "lead_1781743778909_wj1vks8qa",
-      "purpose": "Window deadline reminders for Special Enrollment Period (Newcomer)",
-      "grantedAt": "2026-06-18T00:49:38.910Z",
-      "scope": "remind_via_whatsapp",
-      "id": "consent_1781743778910_hoy8qp1g3"
-    }
-  ]
+  "leads": [],
+  "reminders": [],
+  "consentLogs": []
 }

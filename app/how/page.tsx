@@ -102,7 +102,7 @@ export default function HowItWorksPage() {
           <span>Regulated Moat Advantage</span>
         </div>
         <p className="text-xs text-muted max-w-md mx-auto">
-          Backed by Newton Insurance, a licensed insurer. We prioritize deterministic transparency above pure software automation.
+          askNewton, Inc. is part of the Newton Insurance plc family. We prioritize deterministic transparency above pure software automation.
         </p>
       </div>
     </div>

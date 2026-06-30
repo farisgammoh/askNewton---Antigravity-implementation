@@ -96,7 +96,7 @@ BrainResult JSON to explain:
 ${JSON.stringify(brainResult, null, 2)}`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-latest',
+      model: 'claude-sonnet-5',
       max_tokens: 1500,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
