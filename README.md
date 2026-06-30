@@ -22,9 +22,14 @@ part of the Newton Insurance plc family.
 - **`app/webhooks/eleven/*`** — ElevenLabs voice webhooks (conversation start/end,
   transfer, voicemail), authenticated via `BACKEND_BEARER_TOKEN`, mirrored to HubSpot
   and optionally Zapier.
-- **Lead capture** — `/api/leads` (Postgres if `DATABASE_URL` is set, else a local
-  `db.json` fallback — never commit real lead data to that file) and `/api/waitlist`
-  (Airtable + HubSpot). These are currently two separate paths; see open items below.
+- **Lead capture** — `/api/leads` (reminders/consent logging; Postgres if `DATABASE_URL`
+  is set, else a local `db.json` fallback — never commit real lead data to that file)
+  and `/api/waitlist` (homepage signup). Airtable + HubSpot is the canonical CRM: both
+  routes call the shared `upsertAirtableLead`/`upsertHubspotLead` helpers in
+  `lib/crm.ts` so every lead lands in the same contact record regardless of entry
+  point. `/api/leads`'s CRM sync is best-effort — the local/Postgres save is the
+  source of truth for reminder scheduling and consent logs, so a CRM outage doesn't
+  fail the request.
 
 ## Getting started
 

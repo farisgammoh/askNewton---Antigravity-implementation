@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '../../../lib/db';
+import { upsertAirtableLead, upsertHubspotLead } from '../../../lib/crm';
+
+const LANGUAGES: Record<string, string> = {
+  en: 'English',
+  es: 'Español',
+  ar: 'العربية'
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -73,6 +80,40 @@ export async function POST(req: NextRequest) {
         grantedAt: new Date().toISOString(),
         scope: `remind_via_${reminderChannel}`,
       });
+    }
+
+    // Mirror into the same CRM (Airtable + HubSpot) that the public waitlist
+    // form writes to, so every lead source shares one contact record. This
+    // is best-effort: the lead is already durably saved above, so a CRM
+    // outage shouldn't fail the user-facing request.
+    if (typeof email === 'string' && email.includes('@')) {
+      const newcomer = typeof windowType === 'string' && windowType.toLowerCase().includes('newcomer') ? 'Yes' : 'No';
+      const crmFields = {
+        Email: email.trim().toLowerCase(),
+        State: state,
+        Language: LANGUAGES[String(language).toLowerCase()] || 'English',
+        Newcomer: newcomer,
+        Source: String(sourcePage).slice(0, 120),
+        Status: 'New',
+      };
+
+      const [airtableResult, hubspotResult] = await Promise.allSettled([
+        upsertAirtableLead(crmFields),
+        upsertHubspotLead({
+          email: crmFields.Email,
+          state,
+          language: crmFields.Language,
+          newcomer,
+          source: crmFields.Source,
+        }),
+      ]);
+
+      if (airtableResult.status === 'rejected') {
+        console.error('Leads: Airtable sync failed (lead still saved locally)', airtableResult.reason);
+      }
+      if (hubspotResult.status === 'rejected') {
+        console.error('Leads: HubSpot sync failed (lead still saved locally)', hubspotResult.reason);
+      }
     }
 
     return NextResponse.json({

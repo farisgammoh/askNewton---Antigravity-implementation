@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 
+const AIRTABLE_API = 'https://api.airtable.com/v0';
 const HUBSPOT_UPSERT = 'https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert';
 const HUBSPOT_CONTACTS = 'https://api.hubapi.com/crm/v3/objects/contacts';
 const HUBSPOT_CALLS = 'https://api.hubapi.com/crm/v3/objects/calls';
@@ -68,6 +69,78 @@ export async function hsUpsertContact({ email, phone, firstname, lastname, lang 
   } catch (error: any) {
     console.error('HubSpot contact upsert error:', error);
     return { error: 'Failed to upsert contact', message: error.message };
+  }
+}
+
+/**
+ * Shared CRM-of-record writer: every lead capture path (waitlist form, guide
+ * reminder signup, organizations intake) upserts here so leads aren't
+ * scattered across separate systems with no shared contact record.
+ */
+export async function upsertAirtableLead(fields: Record<string, unknown>): Promise<void> {
+  const token = process.env.AIRTABLE_TOKEN;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const table = process.env.AIRTABLE_WAITLIST_TABLE || 'Waitlist';
+
+  if (!token || !baseId) {
+    throw new Error('Airtable env vars missing');
+  }
+
+  const res = await fetch(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(table)}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      performUpsert: { fieldsToMergeOn: ['Email'] },
+      records: [{ fields }],
+      typecast: true
+    })
+  });
+
+  if (!res.ok) {
+    throw new Error(`Airtable ${res.status}: ${await res.text()}`);
+  }
+}
+
+export async function upsertHubspotLead(p: {
+  email: string;
+  state: string;
+  language: string;
+  newcomer: string;
+  source: string;
+}): Promise<void> {
+  const token = process.env.HUBSPOT_TOKEN;
+  if (!token) {
+    console.warn('Lead sync: HUBSPOT_TOKEN not set — skipping CRM sync');
+    return;
+  }
+
+  const res = await fetch(HUBSPOT_UPSERT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      inputs: [{
+        idProperty: 'email',
+        id: p.email,
+        properties: {
+          email: p.email,
+          state: p.state,
+          preferred_language: p.language,
+          newcomer: p.newcomer,
+          lead_source: p.source,
+          lifecyclestage: 'lead'
+        }
+      }]
+    })
+  });
+
+  if (!res.ok) {
+    throw new Error(`HubSpot ${res.status}: ${await res.text()}`);
   }
 }
 
